@@ -1,0 +1,27 @@
+{
+  "name": "zylos-telegram",
+  "version": "1.0.0",
+  "description": "Telegram Bot component for Zylos0",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node src/bot.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zylos-ai/zylos-telegram.git"
+  },
+  "keywords": [
+    "zylos",
+    "telegram",
+    "bot",
+    "agent"
+  ],
+  "author": "zylos-ai",
+  "license": "MIT",
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "https-proxy-agent": "^7.0.5",
+    "dotenv": "^16.4.5"
+  }
+}
