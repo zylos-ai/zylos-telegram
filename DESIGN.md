@@ -51,17 +51,17 @@ zylos-telegram 是 Zylos0 的核心通讯组件，负责通过 Telegram Bot API 
 ```
 ~/.claude/skills/telegram/
 ├── SKILL.md              # 组件说明文档
-├── install.sh            # 安装脚本
-├── uninstall.sh          # 卸载脚本
-├── upgrade.sh            # 升级脚本
+├── install.js            # 安装脚本
+├── uninstall.js          # 卸载脚本
+├── upgrade.js            # 升级脚本
 ├── package.json          # 依赖定义
 ├── ecosystem.config.js   # PM2 配置
 └── src/
     ├── bot.js            # 主程序入口
-    ├── send.sh           # C4 标准发送接口 (支持文本和媒体)
+    ├── send.js           # C4 标准发送接口 (支持文本和媒体)
     └── lib/
         ├── config.js     # 配置加载模块
-        ├── auth.js       # 认证模块 (白名单 + Product Key)
+        ├── auth.js       # 认证模块 (Owner 绑定 + 白名单)
         └── media.js      # 媒体处理模块
 ```
 
@@ -102,7 +102,7 @@ zylos-telegram 是 Zylos0 的核心通讯组件，负责通过 Telegram Bot API 
 │  └──────────────────────────────────┘                   │
 │                                                          │
 │  ┌──────────────┐                                       │
-│  │   send.sh    │  ← C4 调用发送消息                    │
+│  │   send.js    │  ← C4 调用发送消息                    │
 │  └──────────────┘                                       │
 │                                                          │
 └─────────────────────────────────────────────────────────┘
@@ -116,7 +116,7 @@ zylos-telegram 是 Zylos0 的核心通讯组件，负责通过 Telegram Bot API 
 | 配置 | lib/config.js | 加载 .env + config.json |
 | 认证 | lib/auth.js | Owner 绑定 + 白名单验证 |
 | 媒体 | lib/media.js | 下载图片/文件到本地 |
-| 发送 | send.sh | C4 标准接口，发送文本和媒体 |
+| 发送 | send.js | C4 标准接口，发送文本和媒体 |
 
 ---
 
@@ -164,7 +164,7 @@ Claude 需要回复
       │ c4-send telegram <chat_id> "消息内容"
       ▼
 ┌─────────────────────────────────────┐
-│ ~/.claude/skills/telegram/src/send.sh │
+│ ~/.claude/skills/telegram/src/send.js │
 └─────┬───────────────────────────────┘
       │ 1. 解析参数
       │ 2. 检查媒体前缀 [MEDIA:type]
@@ -176,21 +176,21 @@ Claude 需要回复
 └─────────────┘
 ```
 
-### 4.3 send.sh 接口规范
+### 4.3 send.js 接口规范
 
 ```bash
-# 位置: ~/.claude/skills/telegram/src/send.sh
-# 调用: send.sh <chat_id> <message>
+# 位置: ~/.claude/skills/telegram/src/send.js
+# 调用: node send.js <chat_id> <message>
 # 返回: 0 成功, 非 0 失败
 
 # 示例 - 纯文本
-send.sh "8101553026" "Hello, this is a test message"
+node send.js "8101553026" "Hello, this is a test message"
 
 # 示例 - 发送图片
-send.sh "8101553026" "[MEDIA:image]/path/to/photo.jpg"
+node send.js "8101553026" "[MEDIA:image]/path/to/photo.jpg"
 
 # 示例 - 发送文件
-send.sh "8101553026" "[MEDIA:file]/path/to/document.pdf"
+node send.js "8101553026" "[MEDIA:file]/path/to/document.pdf"
 ```
 
 ### 4.4 消息格式规范
@@ -381,18 +381,18 @@ Owner 拥有特殊权限:
 ### 7.2 发送流程
 
 ```bash
-# send.sh 解析 [MEDIA:type] 前缀
+# send.js 解析 [MEDIA:type] 前缀
 
 # 图片
-send.sh "12345" "[MEDIA:image]/path/to/photo.jpg"
+node send.js "12345" "[MEDIA:image]/path/to/photo.jpg"
 # → 调用 sendPhoto API
 
 # 文件
-send.sh "12345" "[MEDIA:file]/path/to/doc.pdf"
+node send.js "12345" "[MEDIA:file]/path/to/doc.pdf"
 # → 调用 sendDocument API
 
 # 纯文本
-send.sh "12345" "Hello world"
+node send.js "12345" "Hello world"
 # → 调用 sendMessage API
 ```
 
@@ -441,117 +441,112 @@ pm2 logs zylos-telegram
 
 ## 九、安装脚本
 
-### 9.1 install.sh
+### 9.1 install.js
 
-```bash
-#!/bin/bash
-# zylos-telegram 安装脚本
+```javascript
+#!/usr/bin/env node
+// zylos-telegram 安装脚本
+// 用法: node install.js
 
-set -e
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
 
-SKILL_DIR="$HOME/.claude/skills/telegram"
-DATA_DIR="$HOME/zylos/components/telegram"
-ENV_FILE="$HOME/zylos/.env"
+const HOME = process.env.HOME;
+const SKILL_DIR = path.join(HOME, '.claude/skills/telegram');
+const DATA_DIR = path.join(HOME, 'zylos/components/telegram');
 
-echo "=== Installing zylos-telegram ==="
+// 1. 创建 Data 目录
+fs.mkdirSync(path.join(DATA_DIR, 'media'), { recursive: true });
+fs.mkdirSync(path.join(DATA_DIR, 'logs'), { recursive: true });
 
-# 1. 创建 Data 目录
-mkdir -p "$DATA_DIR/media"
-mkdir -p "$DATA_DIR/logs"
+// 2. 安装依赖
+process.chdir(SKILL_DIR);
+execSync('npm install --production', { stdio: 'inherit' });
 
-# 2. 安装依赖
-cd "$SKILL_DIR"
-npm install --production
-
-# 3. 生成默认配置 (不覆盖)
-if [ ! -f "$DATA_DIR/config.json" ]; then
-  cat > "$DATA_DIR/config.json" << 'EOF'
-{
-  "enabled": true,
-  "owner": { "chat_id": null, "username": null, "bound_at": null },
-  "whitelist": { "chat_ids": [], "usernames": [] },
-  "smart_groups": [],
-  "features": { "auto_split_messages": true, "max_message_length": 4000, "download_media": true }
+// 3. 生成默认配置 (不覆盖)
+const configPath = path.join(DATA_DIR, 'config.json');
+if (!fs.existsSync(configPath)) {
+  const defaultConfig = {
+    enabled: true,
+    owner: { chat_id: null, username: null, bound_at: null },
+    whitelist: { chat_ids: [], usernames: [] },
+    smart_groups: [],
+    features: { auto_split_messages: true, max_message_length: 4000, download_media: true }
+  };
+  fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
 }
-EOF
-fi
 
-# 4. 检查环境变量
-if ! grep -q "TELEGRAM_BOT_TOKEN" "$ENV_FILE" 2>/dev/null; then
-  echo "[!] Add TELEGRAM_BOT_TOKEN to $ENV_FILE"
-fi
+// 4. 启动服务
+execSync(`pm2 start "${SKILL_DIR}/ecosystem.config.js"`, { stdio: 'inherit' });
+execSync('pm2 save', { stdio: 'inherit' });
 
-# 5. 启动服务
-pm2 start "$SKILL_DIR/ecosystem.config.js"
-pm2 save
-
-echo "=== Done ==="
+console.log('=== Installation complete ===');
 ```
 
-### 9.2 uninstall.sh
+### 9.2 uninstall.js
 
-```bash
-#!/bin/bash
-# zylos-telegram 卸载脚本
-# 用法: uninstall.sh [--purge]
-#   --purge: 同时删除数据目录
+```javascript
+#!/usr/bin/env node
+// zylos-telegram 卸载脚本
+// 用法: node uninstall.js [--purge]
 
-set -e
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
 
-SKILL_DIR="$HOME/.claude/skills/telegram"
-DATA_DIR="$HOME/zylos/components/telegram"
-PURGE=false
+const HOME = process.env.HOME;
+const SKILL_DIR = path.join(HOME, '.claude/skills/telegram');
+const DATA_DIR = path.join(HOME, 'zylos/components/telegram');
+const purge = process.argv.includes('--purge');
 
-[[ "$1" == "--purge" ]] && PURGE=true
+// 1. 停止 PM2 服务
+try {
+  execSync('pm2 stop zylos-telegram', { stdio: 'pipe' });
+  execSync('pm2 delete zylos-telegram', { stdio: 'pipe' });
+  execSync('pm2 save', { stdio: 'pipe' });
+} catch (e) {}
 
-echo "=== Uninstalling zylos-telegram ==="
+// 2. 删除 Skills 目录
+fs.rmSync(SKILL_DIR, { recursive: true, force: true });
 
-# 1. 停止 PM2 服务
-pm2 stop zylos-telegram 2>/dev/null || true
-pm2 delete zylos-telegram 2>/dev/null || true
-pm2 save
+// 3. 可选删除数据
+if (purge) {
+  fs.rmSync(DATA_DIR, { recursive: true, force: true });
+}
 
-# 2. 删除 Skills 目录
-rm -rf "$SKILL_DIR"
-
-# 3. 可选删除数据
-if $PURGE; then
-  rm -rf "$DATA_DIR"
-  echo "Data directory removed."
-else
-  echo "Data directory preserved: $DATA_DIR"
-fi
-
-echo "=== Done ==="
+console.log('=== Uninstall complete ===');
 ```
 
-### 9.3 upgrade.sh
+### 9.3 upgrade.js
 
-```bash
-#!/bin/bash
-# zylos-telegram 升级脚本
+```javascript
+#!/usr/bin/env node
+// zylos-telegram 升级脚本
+// 用法: node upgrade.js
 
-set -e
+const path = require('path');
+const { execSync } = require('child_process');
 
-SKILL_DIR="$HOME/.claude/skills/telegram"
+const SKILL_DIR = path.join(process.env.HOME, '.claude/skills/telegram');
 
-echo "=== Upgrading zylos-telegram ==="
+console.log('=== Upgrading zylos-telegram ===');
 
-# 1. 拉取最新代码
-echo "Pulling latest code..."
-cd "$SKILL_DIR"
-git pull
+process.chdir(SKILL_DIR);
 
-# 2. 更新依赖
-echo "Updating dependencies..."
-npm install
+// 1. 拉取最新代码
+console.log('Pulling latest code...');
+execSync('git pull', { stdio: 'inherit' });
 
-# 3. 重启服务
-echo "Restarting service..."
-pm2 restart zylos-telegram
+// 2. 更新依赖
+console.log('Updating dependencies...');
+execSync('npm install --production', { stdio: 'inherit' });
 
-echo ""
-echo "=== Upgrade complete ==="
+// 3. 重启服务
+console.log('Restarting service...');
+execSync('pm2 restart zylos-telegram', { stdio: 'inherit' });
+
+console.log('=== Upgrade complete ===');
 ```
 
 ---
@@ -564,10 +559,10 @@ echo "=== Upgrade complete ==="
 |------|------|----------|
 | 1 | 项目初始化 | 仓库结构、package.json、SKILL.md |
 | 2 | 核心重构 | bot.js 模块化拆分、config.js |
-| 3 | C4 对接 | send.sh 实现、c4-receive 集成 |
-| 4 | 白名单功能 | whitelist.js、product-key.js |
-| 5 | 媒体处理 | media.js、send-photo.sh |
-| 6 | 安装脚本 | install.sh、uninstall.sh、upgrade.sh |
+| 3 | C4 对接 | send.js 实现、c4-receive 集成 |
+| 4 | 认证功能 | auth.js (Owner 绑定 + 白名单) |
+| 5 | 媒体处理 | media.js |
+| 6 | 安装脚本 | install.js、uninstall.js、upgrade.js |
 | 7 | 测试验证 | 端到端测试、文档完善 |
 
 ### 10.2 从现有代码迁移
@@ -575,19 +570,19 @@ echo "=== Upgrade complete ==="
 | 现有文件 | 迁移目标 | 改动 |
 |----------|----------|------|
 | bot.js | src/bot.js | 拆分 auth/media 模块 |
-| send-reply.sh | src/send.sh | 重命名，支持 chat_id 参数，合并媒体发送 |
+| send-reply.sh | src/send.js | 改为 Node.js，支持 chat_id 参数 |
 | config.json | Data/config.json | 简化 schema |
 | .env | ~/zylos/.env | 统一管理 |
 
 ### 10.3 验收标准
 
-- [ ] `git clone` + `install.sh` 可在全新环境完成安装
-- [ ] `send.sh <chat_id> <message>` 正确发送消息
+- [ ] `git clone` + `node install.js` 可在全新环境完成安装
+- [ ] `node send.js <chat_id> <message>` 正确发送消息
 - [ ] 私聊消息正确传递到 c4-receive
 - [ ] 图片下载并传递路径
-- [ ] Product Key 验证流程正常
-- [ ] `upgrade.sh` 保留用户配置
-- [ ] `uninstall.sh` 正确清理
+- [ ] Owner 自动绑定流程正常
+- [ ] `node upgrade.js` 保留用户配置
+- [ ] `node uninstall.js` 正确清理
 
 ---
 
