@@ -22,7 +22,7 @@ Via C4 Bridge:
 
 Or directly (for testing):
 ```bash
-~/.claude/skills/telegram/src/send.sh <chat_id> "message"
+node ~/.claude/skills/telegram/src/send.js <chat_id> "message"
 ```
 
 ## Media Messages
