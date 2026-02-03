@@ -222,6 +222,7 @@ bot.on('text', (ctx) => {
     const isSmartGrp = isSmartGroup(config, chatId);
     const botUsername = bot.botInfo?.username;
     const isMentioned = botUsername && ctx.message.text.includes(`@${botUsername}`);
+    const senderIsOwner = config.owner && String(ctx.from.id) === String(config.owner.chat_id);
 
     // Smart groups receive all messages (must be in allowed_groups too, implied)
     if (isSmartGrp) {
@@ -232,6 +233,13 @@ bot.on('text', (ctx) => {
 
     // Allowed groups respond to @mentions
     if (isAllowed && isMentioned) {
+      const message = formatMessage(ctx, ctx.message.text);
+      sendToC4('telegram', String(chatId), message);
+      return;
+    }
+
+    // Owner can @mention bot in any group (even non-whitelisted)
+    if (senderIsOwner && isMentioned) {
       const message = formatMessage(ctx, ctx.message.text);
       sendToC4('telegram', String(chatId), message);
       return;
