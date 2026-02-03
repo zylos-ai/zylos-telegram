@@ -9,7 +9,7 @@ const { exec } = require('child_process');
 const path = require('path');
 
 const { loadConfig, getEnv } = require('./lib/config');
-const { hasOwner, bindOwner, isOwner, isAuthorized, isSmartGroup, getSmartGroupName } = require('./lib/auth');
+const { hasOwner, bindOwner, isOwner, isAuthorized, isAllowedGroup, addAllowedGroup, isSmartGroup, getSmartGroupName } = require('./lib/auth');
 const { downloadPhoto, downloadDocument } = require('./lib/media');
 
 // Load config
@@ -66,7 +66,7 @@ function formatMessage(ctx, text, mediaPath = null) {
   if (chatType === 'private') {
     prefix = `[TG DM]`;
   } else {
-    const groupName = getSmartGroupName(config, chatId) || ctx.chat.title || 'group';
+    const groupName = getGroupName(config, chatId, ctx.chat.title);
     prefix = `[TG GROUP:${groupName}]`;
   }
 
@@ -78,6 +78,85 @@ function formatMessage(ctx, text, mediaPath = null) {
 
   return message;
 }
+
+/**
+ * Get group name from allowed_groups or smart_groups or chat title
+ */
+function getGroupName(config, chatId, chatTitle) {
+  chatId = String(chatId);
+
+  // Check smart_groups first
+  const smartGroup = config.smart_groups?.find(g => String(g.chat_id) === chatId);
+  if (smartGroup) return smartGroup.name;
+
+  // Check allowed_groups
+  const allowedGroup = config.allowed_groups?.find(g => String(g.chat_id) === chatId);
+  if (allowedGroup) return allowedGroup.name;
+
+  return chatTitle || 'group';
+}
+
+/**
+ * Notify owner about pending group approval
+ */
+function notifyOwnerPendingGroup(chatId, chatTitle, addedBy) {
+  if (!config.owner?.chat_id) return;
+
+  const message = `[系统通知] Bot 被拉入群组，等待审批：
+群名: ${chatTitle}
+群ID: ${chatId}
+拉群者: ${addedBy}
+
+如需启用，请执行:
+node ~/.claude/skills/telegram/src/admin.js add-allowed-group "${chatId}" "${chatTitle}"`;
+
+  const { execSync } = require('child_process');
+  const sendPath = path.join(__dirname, 'send.js');
+  try {
+    execSync(`node "${sendPath}" "${config.owner.chat_id}" '${message.replace(/'/g, "'\\''")}'`);
+    console.log(`[bot] Notified owner about pending group: ${chatTitle}`);
+  } catch (err) {
+    console.error(`[bot] Failed to notify owner: ${err.message}`);
+  }
+}
+
+/**
+ * Handle bot being added to a group
+ */
+bot.on('new_chat_members', (ctx) => {
+  config = loadConfig();
+
+  const newMembers = ctx.message.new_chat_members;
+  const botId = bot.botInfo?.id;
+
+  // Check if bot was added
+  const botWasAdded = newMembers.some(member => member.id === botId);
+  if (!botWasAdded) return;
+
+  const chatId = ctx.chat.id;
+  const chatTitle = ctx.chat.title || 'Unknown Group';
+  const addedBy = ctx.from.username || ctx.from.first_name || String(ctx.from.id);
+  const addedById = String(ctx.from.id);
+
+  console.log(`[bot] Added to group: ${chatTitle} (${chatId}) by ${addedBy}`);
+
+  // Check if adder is owner
+  if (config.owner?.chat_id === addedById) {
+    // Owner added bot - auto approve
+    const added = addAllowedGroup(config, chatId, chatTitle);
+    if (added) {
+      ctx.reply(`已加入群白名单，群成员可以 @${bot.botInfo?.username} 对话`);
+      console.log(`[bot] Auto-approved group (owner added): ${chatTitle}`);
+    } else {
+      ctx.reply(`群组已在白名单中`);
+    }
+  } else {
+    // Non-owner added bot - need approval
+    ctx.reply(`Bot 已加入，但需要管理员审批才能使用。`);
+    notifyOwnerPendingGroup(chatId, chatTitle, addedBy);
+    console.log(`[bot] Group pending approval: ${chatTitle}`);
+  }
+});
 
 /**
  * Handle /start command
@@ -137,15 +216,30 @@ bot.on('text', (ctx) => {
     return;
   }
 
-  // Group chat: check if smart group or @mention
+  // Group chat: check permissions
   if (chatType === 'group' || chatType === 'supergroup') {
+    const isAllowed = isAllowedGroup(config, chatId);
     const isSmartGrp = isSmartGroup(config, chatId);
     const botUsername = bot.botInfo?.username;
     const isMentioned = botUsername && ctx.message.text.includes(`@${botUsername}`);
 
-    if (isSmartGrp || isMentioned) {
+    // Smart groups receive all messages (must be in allowed_groups too, implied)
+    if (isSmartGrp) {
       const message = formatMessage(ctx, ctx.message.text);
       sendToC4('telegram', String(chatId), message);
+      return;
+    }
+
+    // Allowed groups respond to @mentions
+    if (isAllowed && isMentioned) {
+      const message = formatMessage(ctx, ctx.message.text);
+      sendToC4('telegram', String(chatId), message);
+      return;
+    }
+
+    // Not in allowed_groups - ignore
+    if (!isAllowed && isMentioned) {
+      console.log(`[bot] Group not allowed: ${chatId}`);
     }
   }
 });
