@@ -35,7 +35,7 @@ if (proxyUrl) {
 const bot = new Telegraf(botToken, botOptions);
 
 // C4 receive interface path
-const C4_RECEIVE = path.join(process.env.HOME, '.claude/skills/comm-bridge/c4-receive.sh');
+const C4_RECEIVE = path.join(process.env.HOME, '.claude/skills/comm-bridge/c4-receive.js');
 
 /**
  * Send message to Claude via C4
@@ -43,7 +43,7 @@ const C4_RECEIVE = path.join(process.env.HOME, '.claude/skills/comm-bridge/c4-re
 function sendToC4(source, endpoint, content) {
   const safeContent = content.replace(/'/g, "'\\''");
 
-  const cmd = `"${C4_RECEIVE}" --source "${source}" --endpoint "${endpoint}" --content '${safeContent}'`;
+  const cmd = `node "${C4_RECEIVE}" --source "${source}" --endpoint "${endpoint}" --content '${safeContent}'`;
 
   exec(cmd, (error, stdout, stderr) => {
     if (error) {
