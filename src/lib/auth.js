@@ -101,10 +101,60 @@ function removeFromWhitelist(config, chatId) {
 }
 
 /**
+ * Check if group is in allowed_groups (can respond to @mentions)
+ */
+function isAllowedGroup(config, chatId) {
+  chatId = String(chatId);
+  if (!config.allowed_groups) return false;
+  return config.allowed_groups.some(g => String(g.chat_id) === chatId);
+}
+
+/**
+ * Add group to allowed_groups
+ */
+function addAllowedGroup(config, chatId, name) {
+  chatId = String(chatId);
+  if (!config.allowed_groups) {
+    config.allowed_groups = [];
+  }
+
+  // Check if already exists
+  if (config.allowed_groups.some(g => String(g.chat_id) === chatId)) {
+    return false;
+  }
+
+  config.allowed_groups.push({
+    chat_id: chatId,
+    name: name,
+    added_at: new Date().toISOString()
+  });
+
+  saveConfig(config);
+  console.log(`[auth] Allowed group added: ${name} (${chatId})`);
+  return true;
+}
+
+/**
+ * Remove group from allowed_groups
+ */
+function removeAllowedGroup(config, chatId) {
+  chatId = String(chatId);
+  if (!config.allowed_groups) return false;
+
+  const index = config.allowed_groups.findIndex(g => String(g.chat_id) === chatId);
+  if (index === -1) return false;
+
+  config.allowed_groups.splice(index, 1);
+  saveConfig(config);
+  return true;
+}
+
+/**
  * Check if chat is a smart group (receive all messages)
  */
 function isSmartGroup(config, chatId) {
   chatId = String(chatId);
+  if (!config.smart_groups) return false;
   return config.smart_groups.some(g => String(g.chat_id) === chatId);
 }
 
@@ -125,6 +175,9 @@ module.exports = {
   isAuthorized,
   addToWhitelist,
   removeFromWhitelist,
+  isAllowedGroup,
+  addAllowedGroup,
+  removeAllowedGroup,
   isSmartGroup,
   getSmartGroupName
 };

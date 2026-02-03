@@ -34,13 +34,76 @@ const commands = {
     console.log(JSON.stringify(config, null, 2));
   },
 
+  'list-allowed-groups': () => {
+    const config = loadConfig();
+    const groups = config.allowed_groups || [];
+    if (groups.length === 0) {
+      console.log('No allowed groups configured');
+    } else {
+      console.log('Allowed Groups (can @mention bot):');
+      groups.forEach(g => {
+        console.log(`  ${g.chat_id} - ${g.name} (added: ${g.added_at || 'unknown'})`);
+      });
+    }
+  },
+
+  'add-allowed-group': (chatId, name) => {
+    if (!chatId || !name) {
+      console.error('Usage: admin.js add-allowed-group <chat_id> <name>');
+      process.exit(1);
+    }
+    const config = loadConfig();
+    if (!config.allowed_groups) {
+      config.allowed_groups = [];
+    }
+
+    // Check if already exists (use String() for consistent comparison)
+    const exists = config.allowed_groups.find(g => String(g.chat_id) === String(chatId));
+    if (exists) {
+      console.log(`Group ${chatId} already in allowed_groups`);
+      return;
+    }
+
+    config.allowed_groups.push({
+      chat_id: chatId,
+      name: name,
+      added_at: new Date().toISOString()
+    });
+    saveConfig(config);
+    console.log(`Added allowed group: ${chatId} (${name})`);
+    console.log('Run: pm2 restart zylos-telegram');
+  },
+
+  'remove-allowed-group': (chatId) => {
+    if (!chatId) {
+      console.error('Usage: admin.js remove-allowed-group <chat_id>');
+      process.exit(1);
+    }
+    const config = loadConfig();
+    if (!config.allowed_groups) {
+      console.log('No allowed groups configured');
+      return;
+    }
+
+    const index = config.allowed_groups.findIndex(g => String(g.chat_id) === String(chatId));
+    if (index === -1) {
+      console.log(`Group ${chatId} not found in allowed_groups`);
+      return;
+    }
+
+    const removed = config.allowed_groups.splice(index, 1)[0];
+    saveConfig(config);
+    console.log(`Removed allowed group: ${chatId} (${removed.name})`);
+    console.log('Run: pm2 restart zylos-telegram');
+  },
+
   'list-smart-groups': () => {
     const config = loadConfig();
     const groups = config.smart_groups || [];
     if (groups.length === 0) {
       console.log('No smart groups configured');
     } else {
-      console.log('Smart Groups:');
+      console.log('Smart Groups (receive all messages):');
       groups.forEach(g => {
         console.log(`  ${g.chat_id} - ${g.name}`);
       });
@@ -159,15 +222,28 @@ const commands = {
 zylos-telegram admin CLI
 
 Commands:
-  show                              Show full config
-  list-smart-groups                 List all smart groups
-  add-smart-group <chat_id> <name>  Add a smart group
-  remove-smart-group <chat_id>      Remove a smart group
-  list-whitelist                    List whitelist entries
+  show                                Show full config
+
+  Allowed Groups (can respond to @mentions):
+  list-allowed-groups                 List allowed groups
+  add-allowed-group <chat_id> <name>  Add an allowed group
+  remove-allowed-group <chat_id>      Remove an allowed group
+
+  Smart Groups (receive all messages):
+  list-smart-groups                   List smart groups
+  add-smart-group <chat_id> <name>    Add a smart group
+  remove-smart-group <chat_id>        Remove a smart group
+
+  Whitelist (private chat access):
+  list-whitelist                      List whitelist entries
   add-whitelist <chat_id|username> <value>    Add to whitelist
   remove-whitelist <chat_id|username> <value> Remove from whitelist
-  show-owner                        Show current owner
-  help                              Show this help
+
+  show-owner                          Show current owner
+  help                                Show this help
+
+Note: When owner adds bot to group, it's auto-approved.
+      When others add bot, owner must manually approve.
 
 After changes, restart bot: pm2 restart zylos-telegram
 `);
