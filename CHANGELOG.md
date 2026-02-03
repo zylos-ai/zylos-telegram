@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0-beta.1] - 2026-02-03
 
-First beta release following zylos component best practices.
+First beta release establishing telegram as the reference implementation for zylos component best practices.
 
 ### Added
 - Telegram Bot with Telegraf framework
@@ -20,9 +20,18 @@ First beta release following zylos component best practices.
 - PM2 service management
 - CHANGELOG.md for version tracking
 - LICENSE file (MIT)
-- upgrades/ directory for version documentation
 
 ### Structure
 - `send.js` at root directory (comm-bridge interface standard)
 - `install.js`, `upgrade.js`, `uninstall.js` lifecycle scripts
 - `src/` for internal implementation
+
+### Upgrade Notes
+
+Initial release. For fresh installation:
+
+```bash
+zylos-pm install telegram
+```
+
+No migration required.
