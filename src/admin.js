@@ -57,8 +57,8 @@ const commands = {
       config.allowed_groups = [];
     }
 
-    // Check if already exists
-    const exists = config.allowed_groups.find(g => g.chat_id === chatId);
+    // Check if already exists (use String() for consistent comparison)
+    const exists = config.allowed_groups.find(g => String(g.chat_id) === String(chatId));
     if (exists) {
       console.log(`Group ${chatId} already in allowed_groups`);
       return;
@@ -85,7 +85,7 @@ const commands = {
       return;
     }
 
-    const index = config.allowed_groups.findIndex(g => g.chat_id === chatId);
+    const index = config.allowed_groups.findIndex(g => String(g.chat_id) === String(chatId));
     if (index === -1) {
       console.log(`Group ${chatId} not found in allowed_groups`);
       return;

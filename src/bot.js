@@ -5,7 +5,7 @@
 
 const { Telegraf } = require('telegraf');
 const { HttpsProxyAgent } = require('https-proxy-agent');
-const { exec } = require('child_process');
+const { exec, execSync } = require('child_process');
 const path = require('path');
 
 const { loadConfig, getEnv } = require('./lib/config');
@@ -102,15 +102,15 @@ function getGroupName(config, chatId, chatTitle) {
 function notifyOwnerPendingGroup(chatId, chatTitle, addedBy) {
   if (!config.owner?.chat_id) return;
 
+  const adminPath = path.join(__dirname, 'admin.js');
   const message = `[系统通知] Bot 被拉入群组，等待审批：
 群名: ${chatTitle}
 群ID: ${chatId}
 拉群者: ${addedBy}
 
 如需启用，请执行:
-node ~/.claude/skills/telegram/src/admin.js add-allowed-group "${chatId}" "${chatTitle}"`;
+node "${adminPath}" add-allowed-group "${chatId}" "${chatTitle}"`;
 
-  const { execSync } = require('child_process');
   const sendPath = path.join(__dirname, 'send.js');
   try {
     execSync(`node "${sendPath}" "${config.owner.chat_id}" '${message.replace(/'/g, "'\\''")}'`);
