@@ -1,11 +1,20 @@
 ---
 name: telegram
-description: Telegram Bot for user communication. Use when replying to Telegram messages or sending notifications.
+version: 1.0.0
+description: Telegram Bot for user communication
+upgrade:
+  repo: zylos-ai/zylos-telegram
+  branch: main
+  service: zylos-telegram
 ---
 
 # Telegram Bot
 
 Telegram messaging component for Zylos Agent.
+
+## Dependencies
+
+- **comm-bridge**: Required for forwarding messages to Claude via C4 protocol
 
 ## When to Use
 
