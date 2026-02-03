@@ -2,12 +2,10 @@
 name: telegram
 version: 1.0.0
 description: Telegram Bot for user communication
-type: service
 upgrade:
   repo: zylos-ai/zylos-telegram
   branch: main
   service: zylos-telegram
-dependencies: []
 ---
 
 # Telegram Bot
