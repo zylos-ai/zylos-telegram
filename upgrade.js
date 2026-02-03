@@ -21,7 +21,7 @@ process.chdir(SKILL_DIR);
 // 1. Update dependencies
 console.log('Updating dependencies...');
 try {
-  execSync('npm install --production', { stdio: 'inherit' });
+  execSync('npm install --omit=dev', { stdio: 'inherit' });
 } catch (err) {
   console.error('Failed to update dependencies:', err.message);
 }
