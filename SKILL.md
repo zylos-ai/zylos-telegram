@@ -1,11 +1,16 @@
 ---
 name: telegram
-version: 1.0.4
+version: 0.1.0-beta.1
 description: Telegram Bot for user communication
+type: communication
+
 upgrade:
   repo: zylos-ai/zylos-telegram
   branch: main
   service: zylos-telegram
+
+dependencies:
+  - comm-bridge
 ---
 
 # Telegram Bot
@@ -31,7 +36,7 @@ Via C4 Bridge:
 
 Or directly (for testing):
 ```bash
-node ~/.claude/skills/telegram/src/send.js <chat_id> "message"
+node ~/.claude/skills/telegram/send.js <chat_id> "message"
 ```
 
 ## Media Messages

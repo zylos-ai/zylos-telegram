@@ -31,7 +31,7 @@ fs.mkdirSync(path.join(DATA_DIR, 'logs'), { recursive: true });
 // 2. Install dependencies
 console.log('Installing dependencies...');
 process.chdir(SKILL_DIR);
-execSync('npm install --production', { stdio: 'inherit' });
+execSync('npm install --omit=dev', { stdio: 'inherit' });
 
 // 3. Create default config (don't overwrite)
 const configPath = path.join(DATA_DIR, 'config.json');
