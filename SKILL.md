@@ -1,6 +1,6 @@
 ---
 name: telegram
-version: 1.0.1
+version: 1.0.2
 description: Telegram Bot for user communication
 upgrade:
   repo: zylos-ai/zylos-telegram
