@@ -12,6 +12,10 @@ upgrade:
 
 Telegram messaging component for Zylos Agent.
 
+## Dependencies
+
+- **comm-bridge**: Required for forwarding messages to Claude via C4 protocol
+
 ## When to Use
 
 - Replying to Telegram messages from users

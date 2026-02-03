@@ -103,12 +103,12 @@ function notifyOwnerPendingGroup(chatId, chatTitle, addedBy) {
   if (!config.owner?.chat_id) return;
 
   const adminPath = path.join(__dirname, 'admin.js');
-  const message = `[系统通知] Bot 被拉入群组，等待审批：
-群名: ${chatTitle}
-群ID: ${chatId}
-拉群者: ${addedBy}
+  const message = `[System] Bot was added to a group, pending approval:
+Group: ${chatTitle}
+ID: ${chatId}
+Added by: ${addedBy}
 
-如需启用，请执行:
+To approve, run:
 node "${adminPath}" add-allowed-group "${chatId}" "${chatTitle}"`;
 
   const sendPath = path.join(__dirname, 'send.js');
@@ -145,14 +145,14 @@ bot.on('new_chat_members', (ctx) => {
     // Owner added bot - auto approve
     const added = addAllowedGroup(config, chatId, chatTitle);
     if (added) {
-      ctx.reply(`已加入群白名单，群成员可以 @${bot.botInfo?.username} 对话`);
+      ctx.reply(`Group added to whitelist. Members can now @${bot.botInfo?.username} to chat.`);
       console.log(`[bot] Auto-approved group (owner added): ${chatTitle}`);
     } else {
-      ctx.reply(`群组已在白名单中`);
+      ctx.reply(`Group is already in whitelist.`);
     }
   } else {
     // Non-owner added bot - need approval
-    ctx.reply(`Bot 已加入，但需要管理员审批才能使用。`);
+    ctx.reply(`Bot joined, but requires admin approval to respond.`);
     notifyOwnerPendingGroup(chatId, chatTitle, addedBy);
     console.log(`[bot] Group pending approval: ${chatTitle}`);
   }
