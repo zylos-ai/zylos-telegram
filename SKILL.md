@@ -52,4 +52,31 @@ pm2 restart zylos-telegram   # Restart service
 ## Owner
 
 First user to interact with the bot becomes the owner (admin).
-Owner can manage whitelist via bot commands.
+
+## Admin CLI
+
+Manage bot configuration via `admin.js`:
+
+```bash
+# Show full config
+node ~/.claude/skills/telegram/src/admin.js show
+
+# Smart Groups (receive all messages, no @mention needed)
+node ~/.claude/skills/telegram/src/admin.js list-smart-groups
+node ~/.claude/skills/telegram/src/admin.js add-smart-group <chat_id> <name>
+node ~/.claude/skills/telegram/src/admin.js remove-smart-group <chat_id>
+
+# Whitelist
+node ~/.claude/skills/telegram/src/admin.js list-whitelist
+node ~/.claude/skills/telegram/src/admin.js add-whitelist chat_id <id>
+node ~/.claude/skills/telegram/src/admin.js add-whitelist username <name>
+node ~/.claude/skills/telegram/src/admin.js remove-whitelist chat_id <id>
+
+# Owner info
+node ~/.claude/skills/telegram/src/admin.js show-owner
+
+# Help
+node ~/.claude/skills/telegram/src/admin.js help
+```
+
+After changes, restart: `pm2 restart zylos-telegram`
