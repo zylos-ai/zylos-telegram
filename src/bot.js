@@ -250,9 +250,20 @@ bot.on('text', (ctx) => {
 bot.on('photo', async (ctx) => {
   config = loadConfig();
 
-  if (!isAuthorized(config, ctx)) {
-    ctx.reply('Sorry, this bot is private.');
-    return;
+  const chatType = ctx.chat.type;
+  const chatId = ctx.chat.id;
+
+  // For private chat: must be authorized
+  if (chatType === 'private') {
+    if (!isAuthorized(config, ctx)) {
+      ctx.reply('Sorry, this bot is private.');
+      return;
+    }
+  } else {
+    // For group chat: must be allowed or smart group
+    if (!isAllowedGroup(config, chatId) && !isSmartGroup(config, chatId)) {
+      return; // Silently ignore
+    }
   }
 
   if (!config.features.download_media) {
@@ -264,7 +275,7 @@ bot.on('photo', async (ctx) => {
     const localPath = await downloadPhoto(ctx);
     const caption = ctx.message.caption || '[sent a photo]';
     const message = formatMessage(ctx, caption, localPath);
-    sendToC4('telegram', String(ctx.chat.id), message);
+    sendToC4('telegram', String(chatId), message);
     ctx.reply('Photo received!');
   } catch (err) {
     console.error(`[bot] Photo download error: ${err.message}`);
@@ -278,9 +289,20 @@ bot.on('photo', async (ctx) => {
 bot.on('document', async (ctx) => {
   config = loadConfig();
 
-  if (!isAuthorized(config, ctx)) {
-    ctx.reply('Sorry, this bot is private.');
-    return;
+  const chatType = ctx.chat.type;
+  const chatId = ctx.chat.id;
+
+  // For private chat: must be authorized
+  if (chatType === 'private') {
+    if (!isAuthorized(config, ctx)) {
+      ctx.reply('Sorry, this bot is private.');
+      return;
+    }
+  } else {
+    // For group chat: must be allowed or smart group
+    if (!isAllowedGroup(config, chatId) && !isSmartGroup(config, chatId)) {
+      return; // Silently ignore
+    }
   }
 
   if (!config.features.download_media) {
@@ -292,7 +314,7 @@ bot.on('document', async (ctx) => {
     const localPath = await downloadDocument(ctx);
     const caption = ctx.message.caption || `[sent a file: ${ctx.message.document.file_name}]`;
     const message = formatMessage(ctx, caption, localPath);
-    sendToC4('telegram', String(ctx.chat.id), message);
+    sendToC4('telegram', String(chatId), message);
     ctx.reply('File received!');
   } catch (err) {
     console.error(`[bot] Document download error: ${err.message}`);
