@@ -84,6 +84,11 @@ Manage bot configuration via `admin.js`:
 # Show full config
 node ~/.claude/skills/telegram/src/admin.js show
 
+# Allowed Groups (respond to @mentions)
+node ~/.claude/skills/telegram/src/admin.js list-allowed-groups
+node ~/.claude/skills/telegram/src/admin.js add-allowed-group <chat_id> <name>
+node ~/.claude/skills/telegram/src/admin.js remove-allowed-group <chat_id>
+
 # Smart Groups (receive all messages, no @mention needed)
 node ~/.claude/skills/telegram/src/admin.js list-smart-groups
 node ~/.claude/skills/telegram/src/admin.js add-smart-group <chat_id> <name>
