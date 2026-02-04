@@ -6,26 +6,7 @@
  * Usage: node admin.js <command> [args]
  */
 
-const fs = require('fs');
-const path = require('path');
-
-const DATA_DIR = path.join(process.env.HOME, 'zylos/components/telegram');
-const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
-
-// Load config
-function loadConfig() {
-  try {
-    return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-  } catch (err) {
-    console.error(`Error loading config: ${err.message}`);
-    process.exit(1);
-  }
-}
-
-// Save config
-function saveConfig(config) {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
-}
+const { loadConfig, saveConfig } = require('./lib/config');
 
 // Commands
 const commands = {

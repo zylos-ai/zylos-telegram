@@ -1,10 +1,10 @@
 # zylos-telegram 详细设计文档
 
-**版本**: v1.0 Draft
-**日期**: 2026-02-02
-**作者**: Zylos10
+**版本**: v2.0
+**日期**: 2026-02-04
+**作者**: Zylos Team
 **仓库**: https://github.com/zylos-ai/zylos-telegram
-**状态**: 待 Review
+**状态**: 已实现
 
 ---
 
@@ -50,20 +50,24 @@ zylos-telegram 是 Zylos0 的核心通讯组件，负责通过 Telegram Bot API 
 
 ```
 ~/.claude/skills/telegram/
-├── SKILL.md              # 组件说明文档
-├── install.js            # 安装脚本
-├── uninstall.js          # 卸载脚本
-├── upgrade.js            # 升级脚本
+├── SKILL.md              # 组件元数据 (v2 格式，含 lifecycle)
 ├── package.json          # 依赖定义
 ├── ecosystem.config.js   # PM2 配置
+├── send.js               # C4 标准发送接口 (根目录)
+├── hooks/
+│   ├── post-install.js   # 安装后钩子 (创建目录、配置 PM2)
+│   └── post-upgrade.js   # 升级后钩子 (配置迁移)
 └── src/
     ├── bot.js            # 主程序入口
-    ├── send.js           # C4 标准发送接口 (支持文本和媒体)
+    ├── admin.js          # 管理 CLI
     └── lib/
         ├── config.js     # 配置加载模块
         ├── auth.js       # 认证模块 (Owner 绑定 + 白名单)
         └── media.js      # 媒体处理模块
 ```
+
+> **注意**: v2 格式使用 `hooks/` 目录替代了原来的 `install.js`、`upgrade.js`、`uninstall.js`。
+> 标准安装/卸载操作由 zylos CLI 处理，hooks 仅处理组件特定逻辑。
 
 ### 2.2 Data 目录 (数据)
 
@@ -439,150 +443,80 @@ pm2 logs zylos-telegram
 
 ---
 
-## 九、安装脚本
+## 九、生命周期管理 (v2 Hooks)
 
-### 9.1 install.js
+v2 格式使用 `SKILL.md` 中的 `lifecycle` 配置和 `hooks/` 目录，替代了原来的独立脚本。
 
-```javascript
-#!/usr/bin/env node
-// zylos-telegram 安装脚本
-// 用法: node install.js
+### 9.1 SKILL.md lifecycle 配置
 
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-
-const HOME = process.env.HOME;
-const SKILL_DIR = path.join(HOME, '.claude/skills/telegram');
-const DATA_DIR = path.join(HOME, 'zylos/components/telegram');
-
-// 1. 创建 Data 目录
-fs.mkdirSync(path.join(DATA_DIR, 'media'), { recursive: true });
-fs.mkdirSync(path.join(DATA_DIR, 'logs'), { recursive: true });
-
-// 2. 安装依赖
-process.chdir(SKILL_DIR);
-execSync('npm install --production', { stdio: 'inherit' });
-
-// 3. 生成默认配置 (不覆盖)
-const configPath = path.join(DATA_DIR, 'config.json');
-if (!fs.existsSync(configPath)) {
-  const defaultConfig = {
-    enabled: true,
-    owner: { chat_id: null, username: null, bound_at: null },
-    whitelist: { chat_ids: [], usernames: [] },
-    smart_groups: [],
-    features: { auto_split_messages: true, max_message_length: 4000, download_media: true }
-  };
-  fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
-}
-
-// 4. 启动服务
-execSync(`pm2 start "${SKILL_DIR}/ecosystem.config.js"`, { stdio: 'inherit' });
-execSync('pm2 save', { stdio: 'inherit' });
-
-console.log('=== Installation complete ===');
+```yaml
+lifecycle:
+  npm: true                          # zylos CLI 执行 npm install
+  service:
+    name: zylos-telegram             # PM2 服务名
+    entry: src/bot.js                # 入口文件
+  data_dir: ~/zylos/components/telegram  # 数据目录
+  hooks:
+    post-install: hooks/post-install.js  # 安装后钩子
+    post-upgrade: hooks/post-upgrade.js  # 升级后钩子
 ```
 
-### 9.2 uninstall.js
+### 9.2 hooks/post-install.js
 
-```javascript
-#!/usr/bin/env node
-// zylos-telegram 卸载脚本
-// 用法: node uninstall.js [--purge]
+安装后钩子，处理组件特定设置：
 
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
+- 创建子目录 (media/, logs/)
+- 生成默认 config.json
+- 检查环境变量
+- 用 ecosystem.config.js 配置 PM2
 
-const HOME = process.env.HOME;
-const SKILL_DIR = path.join(HOME, '.claude/skills/telegram');
-const DATA_DIR = path.join(HOME, 'zylos/components/telegram');
-const purge = process.argv.includes('--purge');
+### 9.3 hooks/post-upgrade.js
 
-// 1. 停止 PM2 服务
-try {
-  execSync('pm2 stop zylos-telegram', { stdio: 'pipe' });
-  execSync('pm2 delete zylos-telegram', { stdio: 'pipe' });
-  execSync('pm2 save', { stdio: 'pipe' });
-} catch (e) {}
+升级后钩子，处理配置迁移：
 
-// 2. 删除 Skills 目录
-fs.rmSync(SKILL_DIR, { recursive: true, force: true });
+- 检查并添加新配置字段
+- 迁移旧配置格式
+- 保持向后兼容
 
-// 3. 可选删除数据
-if (purge) {
-  fs.rmSync(DATA_DIR, { recursive: true, force: true });
-}
+### 9.4 安装/卸载流程
 
-console.log('=== Uninstall complete ===');
-```
+标准操作由 `zylos CLI` 处理：
 
-### 9.3 upgrade.js
+```bash
+# 安装
+zylos install telegram
+# 1. git clone 到 ~/.claude/skills/telegram
+# 2. npm install
+# 3. 创建 data_dir
+# 4. PM2 注册服务
+# 5. 执行 post-install hook
 
-```javascript
-#!/usr/bin/env node
-// zylos-telegram 升级脚本
-// 用法: node upgrade.js
+# 升级
+zylos upgrade telegram
+# 1. git pull
+# 2. npm install
+# 3. 执行 post-upgrade hook
+# 4. PM2 重启服务
 
-const path = require('path');
-const { execSync } = require('child_process');
-
-const SKILL_DIR = path.join(process.env.HOME, '.claude/skills/telegram');
-
-console.log('=== Upgrading zylos-telegram ===');
-
-process.chdir(SKILL_DIR);
-
-// 1. 拉取最新代码
-console.log('Pulling latest code...');
-execSync('git pull', { stdio: 'inherit' });
-
-// 2. 更新依赖
-console.log('Updating dependencies...');
-execSync('npm install --production', { stdio: 'inherit' });
-
-// 3. 重启服务
-console.log('Restarting service...');
-execSync('pm2 restart zylos-telegram', { stdio: 'inherit' });
-
-console.log('=== Upgrade complete ===');
+# 卸载
+zylos uninstall telegram [--purge]
+# 1. PM2 删除服务
+# 2. 删除 skill 目录
+# 3. --purge: 删除数据目录
 ```
 
 ---
 
-## 十、开发计划
+## 十、验收标准
 
-### 10.1 阶段划分
-
-| 阶段 | 任务 | 预期产出 |
-|------|------|----------|
-| 1 | 项目初始化 | 仓库结构、package.json、SKILL.md |
-| 2 | 核心重构 | bot.js 模块化拆分、config.js |
-| 3 | C4 对接 | send.js 实现、c4-receive 集成 |
-| 4 | 认证功能 | auth.js (Owner 绑定 + 白名单) |
-| 5 | 媒体处理 | media.js |
-| 6 | 安装脚本 | install.js、uninstall.js、upgrade.js |
-| 7 | 测试验证 | 端到端测试、文档完善 |
-
-### 10.2 从现有代码迁移
-
-| 现有文件 | 迁移目标 | 改动 |
-|----------|----------|------|
-| bot.js | src/bot.js | 拆分 auth/media 模块 |
-| send-reply.sh | src/send.js | 改为 Node.js，支持 chat_id 参数 |
-| config.json | Data/config.json | 简化 schema |
-| .env | ~/zylos/.env | 统一管理 |
-
-### 10.3 验收标准
-
-- [ ] `git clone` + `node install.js` 可在全新环境完成安装
-- [ ] `node send.js <chat_id> <message>` 正确发送消息
-- [ ] 私聊消息正确传递到 c4-receive
-- [ ] 图片下载并传递路径
-- [ ] Owner 自动绑定流程正常
-- [ ] `node upgrade.js` 保留用户配置
-- [ ] `node uninstall.js` 正确清理
+- [x] `zylos install telegram` 可在全新环境完成安装
+- [x] `node send.js <chat_id> <message>` 正确发送消息
+- [x] 私聊消息正确传递到 c4-receive
+- [x] 图片下载并传递路径
+- [x] Owner 自动绑定流程正常
+- [x] Owner 可在任意群 @bot 触发响应
+- [x] `zylos upgrade telegram` 保留用户配置并执行迁移
+- [x] `zylos uninstall telegram` 正确清理
 
 ---
 

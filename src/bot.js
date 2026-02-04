@@ -9,7 +9,7 @@ const { exec, execSync } = require('child_process');
 const path = require('path');
 
 const { loadConfig, getEnv } = require('./lib/config');
-const { hasOwner, bindOwner, isOwner, isAuthorized, isAllowedGroup, addAllowedGroup, isSmartGroup, getSmartGroupName } = require('./lib/auth');
+const { hasOwner, bindOwner, isAuthorized, isAllowedGroup, addAllowedGroup, isSmartGroup } = require('./lib/auth');
 const { downloadPhoto, downloadDocument } = require('./lib/media');
 
 // Load config
