@@ -6,7 +6,7 @@
  * Usage: node admin.js <command> [args]
  */
 
-const { loadConfig, saveConfig } = require('./lib/config');
+import { loadConfig, saveConfig } from './lib/config.js';
 
 // Commands
 const commands = {

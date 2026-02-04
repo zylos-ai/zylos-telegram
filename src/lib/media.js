@@ -3,12 +3,12 @@
  * Downloads photos/files from Telegram to local storage
  */
 
-const fs = require('fs');
-const path = require('path');
-const { exec } = require('child_process');
-const { getEnv } = require('./config');
+import fs from 'fs';
+import path from 'path';
+import { exec } from 'child_process';
+import { getEnv } from './config.js';
 
-const MEDIA_DIR = path.join(process.env.HOME, 'zylos/components/telegram/media');
+export const MEDIA_DIR = path.join(process.env.HOME, 'zylos/components/telegram/media');
 
 // Ensure media directory exists
 if (!fs.existsSync(MEDIA_DIR)) {
@@ -30,7 +30,7 @@ function generateFilename(prefix, ext) {
  * @param {string} prefix - Filename prefix (e.g., 'photo', 'file')
  * @returns {Promise<string>} Local file path
  */
-async function downloadFile(ctx, fileId, prefix = 'file') {
+export async function downloadFile(ctx, fileId, prefix = 'file') {
   const botToken = getEnv('TELEGRAM_BOT_TOKEN');
   const proxyUrl = getEnv('TELEGRAM_PROXY_URL');
 
@@ -57,7 +57,7 @@ async function downloadFile(ctx, fileId, prefix = 'file') {
       if (error) {
         reject(new Error(`Download failed: ${error.message}`));
       } else {
-        console.log(`[media] Downloaded: ${localPath}`);
+        console.log(`[telegram] Downloaded: ${localPath}`);
         resolve(localPath);
       }
     });
@@ -69,7 +69,7 @@ async function downloadFile(ctx, fileId, prefix = 'file') {
  * @param {Object} ctx - Telegraf context
  * @returns {Promise<string>} Local file path
  */
-async function downloadPhoto(ctx) {
+export async function downloadPhoto(ctx) {
   // Get largest photo (last in array)
   const photos = ctx.message.photo;
   const photo = photos[photos.length - 1];
@@ -81,15 +81,8 @@ async function downloadPhoto(ctx) {
  * @param {Object} ctx - Telegraf context
  * @returns {Promise<string>} Local file path
  */
-async function downloadDocument(ctx) {
+export async function downloadDocument(ctx) {
   const doc = ctx.message.document;
   const prefix = doc.file_name ? path.parse(doc.file_name).name : 'document';
   return downloadFile(ctx, doc.file_id, prefix);
 }
-
-module.exports = {
-  downloadFile,
-  downloadPhoto,
-  downloadDocument,
-  MEDIA_DIR
-};

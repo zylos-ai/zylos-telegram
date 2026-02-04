@@ -3,14 +3,18 @@
  * Main entry point
  */
 
-const { Telegraf } = require('telegraf');
-const { HttpsProxyAgent } = require('https-proxy-agent');
-const { exec, execSync } = require('child_process');
-const path = require('path');
+import { Telegraf } from 'telegraf';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { exec, execSync } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const { loadConfig, getEnv } = require('./lib/config');
-const { hasOwner, bindOwner, isAuthorized, isAllowedGroup, addAllowedGroup, isSmartGroup } = require('./lib/auth');
-const { downloadPhoto, downloadDocument } = require('./lib/media');
+import { loadConfig, getEnv } from './lib/config.js';
+import { hasOwner, bindOwner, isAuthorized, isAllowedGroup, addAllowedGroup, isSmartGroup } from './lib/auth.js';
+import { downloadPhoto, downloadDocument } from './lib/media.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load config
 let config = loadConfig();
@@ -18,7 +22,7 @@ let config = loadConfig();
 // Setup bot with optional proxy
 const botToken = getEnv('TELEGRAM_BOT_TOKEN');
 if (!botToken) {
-  console.error('[bot] TELEGRAM_BOT_TOKEN not set in ~/zylos/.env');
+  console.error('[telegram] TELEGRAM_BOT_TOKEN not set in ~/zylos/.env');
   process.exit(1);
 }
 
@@ -26,7 +30,7 @@ const proxyUrl = getEnv('TELEGRAM_PROXY_URL');
 const botOptions = {};
 
 if (proxyUrl) {
-  console.log(`[bot] Using proxy: ${proxyUrl}`);
+  console.log(`[telegram] Using proxy: ${proxyUrl}`);
   botOptions.telegram = {
     agent: new HttpsProxyAgent(proxyUrl)
   };
@@ -41,15 +45,19 @@ const C4_RECEIVE = path.join(process.env.HOME, '.claude/skills/comm-bridge/c4-re
  * Send message to Claude via C4
  */
 function sendToC4(source, endpoint, content) {
+  if (!content) {
+    console.error('[telegram] sendToC4 called with empty content');
+    return;
+  }
   const safeContent = content.replace(/'/g, "'\\''");
 
   const cmd = `node "${C4_RECEIVE}" --source "${source}" --endpoint "${endpoint}" --content '${safeContent}'`;
 
   exec(cmd, (error, stdout, stderr) => {
     if (error) {
-      console.error(`[bot] C4 receive error: ${error.message}`);
+      console.error(`[telegram] C4 receive error: ${error.message}`);
     } else {
-      console.log(`[bot] Sent to C4: ${content.substring(0, 50)}...`);
+      console.log(`[telegram] Sent to C4: ${content.substring(0, 50)}...`);
     }
   });
 }
@@ -114,9 +122,9 @@ node "${adminPath}" add-allowed-group "${chatId}" "${chatTitle}"`;
   const sendPath = path.join(__dirname, '..', 'send.js');
   try {
     execSync(`node "${sendPath}" "${config.owner.chat_id}" '${message.replace(/'/g, "'\\''")}'`);
-    console.log(`[bot] Notified owner about pending group: ${chatTitle}`);
+    console.log(`[telegram] Notified owner about pending group: ${chatTitle}`);
   } catch (err) {
-    console.error(`[bot] Failed to notify owner: ${err.message}`);
+    console.error(`[telegram] Failed to notify owner: ${err.message}`);
   }
 }
 
@@ -138,7 +146,7 @@ bot.on('new_chat_members', (ctx) => {
   const addedBy = ctx.from.username || ctx.from.first_name || String(ctx.from.id);
   const addedById = String(ctx.from.id);
 
-  console.log(`[bot] Added to group: ${chatTitle} (${chatId}) by ${addedBy}`);
+  console.log(`[telegram] Added to group: ${chatTitle} (${chatId}) by ${addedBy}`);
 
   // Check if adder is owner
   if (config.owner?.chat_id === addedById) {
@@ -146,7 +154,7 @@ bot.on('new_chat_members', (ctx) => {
     const added = addAllowedGroup(config, chatId, chatTitle);
     if (added) {
       ctx.reply(`Group added to whitelist. Members can now @${bot.botInfo?.username} to chat.`);
-      console.log(`[bot] Auto-approved group (owner added): ${chatTitle}`);
+      console.log(`[telegram] Auto-approved group (owner added): ${chatTitle}`);
     } else {
       ctx.reply(`Group is already in whitelist.`);
     }
@@ -154,7 +162,7 @@ bot.on('new_chat_members', (ctx) => {
     // Non-owner added bot - need approval
     ctx.reply(`Bot joined, but requires admin approval to respond.`);
     notifyOwnerPendingGroup(chatId, chatTitle, addedBy);
-    console.log(`[bot] Group pending approval: ${chatTitle}`);
+    console.log(`[telegram] Group pending approval: ${chatTitle}`);
   }
 });
 
@@ -169,14 +177,14 @@ bot.start((ctx) => {
   if (!hasOwner(config)) {
     bindOwner(config, ctx);
     ctx.reply('You are now the admin of this bot.');
-    console.log(`[bot] New owner: ${ctx.from.username || ctx.chat.id}`);
+    console.log(`[telegram] New owner: ${ctx.from.username || ctx.chat.id}`);
     return;
   }
 
   // Check authorization
   if (!isAuthorized(config, ctx)) {
     ctx.reply('Sorry, this bot is private.');
-    console.log(`[bot] Unauthorized /start: ${ctx.from.username || ctx.chat.id}`);
+    console.log(`[telegram] Unauthorized /start: ${ctx.from.username || ctx.chat.id}`);
     return;
   }
 
@@ -206,7 +214,7 @@ bot.on('text', (ctx) => {
 
     if (!isAuthorized(config, ctx)) {
       ctx.reply('Sorry, this bot is private.');
-      console.log(`[bot] Unauthorized: ${ctx.from.username || chatId}`);
+      console.log(`[telegram] Unauthorized: ${ctx.from.username || chatId}`);
       return;
     }
 
@@ -247,7 +255,7 @@ bot.on('text', (ctx) => {
 
     // Not in allowed_groups - ignore
     if (!isAllowed && isMentioned) {
-      console.log(`[bot] Group not allowed: ${chatId}`);
+      console.log(`[telegram] Group not allowed: ${chatId}`);
     }
   }
 });
@@ -286,7 +294,7 @@ bot.on('photo', async (ctx) => {
     sendToC4('telegram', String(chatId), message);
     ctx.reply('Photo received!');
   } catch (err) {
-    console.error(`[bot] Photo download error: ${err.message}`);
+    console.error(`[telegram] Photo download error: ${err.message}`);
     ctx.reply('Failed to download photo.');
   }
 });
@@ -325,7 +333,7 @@ bot.on('document', async (ctx) => {
     sendToC4('telegram', String(chatId), message);
     ctx.reply('File received!');
   } catch (err) {
-    console.error(`[bot] Document download error: ${err.message}`);
+    console.error(`[telegram] Document download error: ${err.message}`);
     ctx.reply('Failed to download file.');
   }
 });
@@ -334,15 +342,15 @@ bot.on('document', async (ctx) => {
  * Error handling
  */
 bot.catch((err, ctx) => {
-  console.error(`[bot] Error for ${ctx.updateType}:`, err.message);
+  console.error(`[telegram] Error for ${ctx.updateType}:`, err.message);
 });
 
 /**
  * Start bot
  */
 bot.launch().then(() => {
-  console.log('[bot] zylos-telegram started');
-  console.log(`[bot] Proxy: ${proxyUrl || 'none'}`);
+  console.log('[telegram] zylos-telegram started');
+  console.log(`[telegram] Proxy: ${proxyUrl || 'none'}`);
 });
 
 // Graceful shutdown

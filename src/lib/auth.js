@@ -3,19 +3,19 @@
  * Handles owner auto-binding and whitelist verification
  */
 
-const { loadConfig, saveConfig } = require('./config');
+import { saveConfig } from './config.js';
 
 /**
  * Check if owner is bound
  */
-function hasOwner(config) {
+export function hasOwner(config) {
   return config.owner && config.owner.chat_id !== null;
 }
 
 /**
  * Bind first user as owner
  */
-function bindOwner(config, ctx) {
+export function bindOwner(config, ctx) {
   const chatId = String(ctx.chat.id);
   const username = ctx.from.username || null;
 
@@ -31,7 +31,7 @@ function bindOwner(config, ctx) {
   }
 
   saveConfig(config);
-  console.log(`[auth] Owner bound: ${username || chatId}`);
+  console.log(`[telegram] Owner bound: ${username || chatId}`);
 
   return true;
 }
@@ -39,7 +39,7 @@ function bindOwner(config, ctx) {
 /**
  * Check if user is the owner
  */
-function isOwner(config, ctx) {
+export function isOwner(config, ctx) {
   if (!hasOwner(config)) return false;
   return String(ctx.chat.id) === String(config.owner.chat_id);
 }
@@ -47,7 +47,7 @@ function isOwner(config, ctx) {
 /**
  * Check if user is in whitelist
  */
-function isWhitelisted(config, ctx) {
+export function isWhitelisted(config, ctx) {
   const chatId = String(ctx.chat.id);
   const username = ctx.from.username?.toLowerCase();
 
@@ -67,14 +67,14 @@ function isWhitelisted(config, ctx) {
 /**
  * Check if user is authorized (owner or whitelisted)
  */
-function isAuthorized(config, ctx) {
+export function isAuthorized(config, ctx) {
   return isOwner(config, ctx) || isWhitelisted(config, ctx);
 }
 
 /**
  * Add user to whitelist
  */
-function addToWhitelist(config, chatId, username = null) {
+export function addToWhitelist(config, chatId, username = null) {
   chatId = String(chatId);
 
   if (!config.whitelist.chat_ids.includes(chatId)) {
@@ -92,7 +92,7 @@ function addToWhitelist(config, chatId, username = null) {
 /**
  * Remove user from whitelist
  */
-function removeFromWhitelist(config, chatId) {
+export function removeFromWhitelist(config, chatId) {
   chatId = String(chatId);
 
   config.whitelist.chat_ids = config.whitelist.chat_ids.filter(id => id !== chatId);
@@ -103,7 +103,7 @@ function removeFromWhitelist(config, chatId) {
 /**
  * Check if group is in allowed_groups (can respond to @mentions)
  */
-function isAllowedGroup(config, chatId) {
+export function isAllowedGroup(config, chatId) {
   chatId = String(chatId);
   if (!config.allowed_groups) return false;
   return config.allowed_groups.some(g => String(g.chat_id) === chatId);
@@ -112,7 +112,7 @@ function isAllowedGroup(config, chatId) {
 /**
  * Add group to allowed_groups
  */
-function addAllowedGroup(config, chatId, name) {
+export function addAllowedGroup(config, chatId, name) {
   chatId = String(chatId);
   if (!config.allowed_groups) {
     config.allowed_groups = [];
@@ -130,14 +130,14 @@ function addAllowedGroup(config, chatId, name) {
   });
 
   saveConfig(config);
-  console.log(`[auth] Allowed group added: ${name} (${chatId})`);
+  console.log(`[telegram] Allowed group added: ${name} (${chatId})`);
   return true;
 }
 
 /**
  * Remove group from allowed_groups
  */
-function removeAllowedGroup(config, chatId) {
+export function removeAllowedGroup(config, chatId) {
   chatId = String(chatId);
   if (!config.allowed_groups) return false;
 
@@ -152,7 +152,7 @@ function removeAllowedGroup(config, chatId) {
 /**
  * Check if chat is a smart group (receive all messages)
  */
-function isSmartGroup(config, chatId) {
+export function isSmartGroup(config, chatId) {
   chatId = String(chatId);
   if (!config.smart_groups) return false;
   return config.smart_groups.some(g => String(g.chat_id) === chatId);
@@ -161,23 +161,8 @@ function isSmartGroup(config, chatId) {
 /**
  * Get smart group name
  */
-function getSmartGroupName(config, chatId) {
+export function getSmartGroupName(config, chatId) {
   chatId = String(chatId);
   const group = config.smart_groups.find(g => String(g.chat_id) === chatId);
   return group ? group.name : null;
 }
-
-module.exports = {
-  hasOwner,
-  bindOwner,
-  isOwner,
-  isWhitelisted,
-  isAuthorized,
-  addToWhitelist,
-  removeFromWhitelist,
-  isAllowedGroup,
-  addAllowedGroup,
-  removeAllowedGroup,
-  isSmartGroup,
-  getSmartGroupName
-};

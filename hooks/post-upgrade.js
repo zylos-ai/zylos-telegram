@@ -13,8 +13,8 @@
  * Note: Service restart is handled by zylos CLI after this hook.
  */
 
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
 const HOME = process.env.HOME;
 const DATA_DIR = path.join(HOME, 'zylos/components/telegram');

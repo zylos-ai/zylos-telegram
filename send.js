@@ -6,16 +6,10 @@
  * Returns: exit 0 on success, non-zero on failure
  */
 
-const fs = require('fs');
-const path = require('path');
-const https = require('https');
-const { URL } = require('url');
-
-// Load environment
-const envPath = path.join(process.env.HOME, 'zylos', '.env');
-if (fs.existsSync(envPath)) {
-  require('dotenv').config({ path: envPath });
-}
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
+import 'dotenv/config';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const PROXY_URL = process.env.TELEGRAM_PROXY_URL;
@@ -41,7 +35,6 @@ if (!BOT_TOKEN) {
  */
 function apiRequest(method, params) {
   return new Promise((resolve, reject) => {
-    const { execSync } = require('child_process');
     const url = `https://api.telegram.org/bot${BOT_TOKEN}/${method}`;
 
     let curlCmd;
