@@ -29,22 +29,26 @@ if (fs.existsSync(configPath)) {
     let migrated = false;
     const migrations = [];
 
-    // Migration 1: Ensure features object exists
+    // Migration 1: Ensure features object and all fields
     if (!config.features) {
-      config.features = {
-        auto_split_messages: true,
-        max_message_length: 4000,
-        download_media: true
-      };
+      config.features = {};
       migrated = true;
       migrations.push('Added features object');
-    } else {
-      // Migration 1b: Add features.download_media if missing
-      if (config.features.download_media === undefined) {
-        config.features.download_media = true;
-        migrated = true;
-        migrations.push('Added features.download_media');
-      }
+    }
+    if (config.features.auto_split_messages === undefined) {
+      config.features.auto_split_messages = true;
+      migrated = true;
+      migrations.push('Added features.auto_split_messages');
+    }
+    if (config.features.max_message_length === undefined) {
+      config.features.max_message_length = 4000;
+      migrated = true;
+      migrations.push('Added features.max_message_length');
+    }
+    if (config.features.download_media === undefined) {
+      config.features.download_media = true;
+      migrated = true;
+      migrations.push('Added features.download_media');
     }
 
     // Migration 2: Add smart_groups if missing
