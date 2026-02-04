@@ -29,11 +29,22 @@ if (fs.existsSync(configPath)) {
     let migrated = false;
     const migrations = [];
 
-    // Migration 1: Add features.download_media if missing
-    if (config.features && config.features.download_media === undefined) {
-      config.features.download_media = true;
+    // Migration 1: Ensure features object exists
+    if (!config.features) {
+      config.features = {
+        auto_split_messages: true,
+        max_message_length: 4000,
+        download_media: true
+      };
       migrated = true;
-      migrations.push('Added features.download_media');
+      migrations.push('Added features object');
+    } else {
+      // Migration 1b: Add features.download_media if missing
+      if (config.features.download_media === undefined) {
+        config.features.download_media = true;
+        migrated = true;
+        migrations.push('Added features.download_media');
+      }
     }
 
     // Migration 2: Add smart_groups if missing
@@ -59,6 +70,20 @@ if (fs.existsSync(configPath)) {
         migrated = true;
         migrations.push('Added whitelist.usernames');
       }
+    }
+
+    // Migration 4: Ensure owner structure
+    if (!config.owner) {
+      config.owner = { chat_id: null, username: null, bound_at: null };
+      migrated = true;
+      migrations.push('Added owner structure');
+    }
+
+    // Migration 5: Ensure enabled field
+    if (config.enabled === undefined) {
+      config.enabled = true;
+      migrated = true;
+      migrations.push('Added enabled field');
     }
 
     // Save if migrated
