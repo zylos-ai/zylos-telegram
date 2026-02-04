@@ -5,7 +5,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+
+// Load .env from ~/zylos/.env (not cwd which may be skill directory)
+dotenv.config({ path: path.join(process.env.HOME, 'zylos/.env') });
 
 const HOME = process.env.HOME;
 export const CONFIG_PATH = path.join(HOME, 'zylos/components/telegram/config.json');
