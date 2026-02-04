@@ -1,14 +1,26 @@
 ---
 name: telegram
-version: 0.1.0-beta.1
+version: 0.1.0
 description: Telegram Bot for user communication
 type: communication
 
+# Lifecycle configuration (v2)
+lifecycle:
+  npm: true
+  service:
+    name: zylos-telegram
+    entry: src/bot.js
+  data_dir: ~/zylos/components/telegram
+  hooks:
+    post-install: hooks/post-install.js
+    post-upgrade: hooks/post-upgrade.js
+
+# Upgrade configuration
 upgrade:
   repo: zylos-ai/zylos-telegram
   branch: main
-  service: zylos-telegram
 
+# Component dependencies
 dependencies:
   - comm-bridge
 ---
