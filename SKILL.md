@@ -1,6 +1,6 @@
 ---
 name: telegram
-version: 0.2.0
+version: 0.2.0-beta.1
 description: Telegram Bot for user communication
 type: communication
 
