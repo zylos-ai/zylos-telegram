@@ -18,7 +18,6 @@ const fs = require('fs');
 const path = require('path');
 
 const HOME = process.env.HOME;
-const SKILL_DIR = path.dirname(__dirname);
 const DATA_DIR = path.join(HOME, 'zylos/components/telegram');
 const ENV_FILE = path.join(HOME, 'zylos/.env');
 
@@ -64,13 +63,11 @@ try {
 
 if (!envContent.includes('TELEGRAM_BOT_TOKEN')) {
   console.log('\n[!] TELEGRAM_BOT_TOKEN not found in ' + ENV_FILE);
-  console.log('    Please add it before starting the service:');
-  console.log('    echo "TELEGRAM_BOT_TOKEN=your_token" >> ' + ENV_FILE);
+  console.log('    Add it and restart the service:');
+  console.log('    1. echo "TELEGRAM_BOT_TOKEN=your_token" >> ' + ENV_FILE);
+  console.log('    2. pm2 restart zylos-telegram');
 } else {
   console.log('  - TELEGRAM_BOT_TOKEN found');
 }
 
 console.log('\n[post-install] Complete!');
-console.log('\nNext steps:');
-console.log('  1. Ensure TELEGRAM_BOT_TOKEN is set in ~/zylos/.env');
-console.log('  2. Start service: pm2 restart zylos-telegram');

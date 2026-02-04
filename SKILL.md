@@ -4,7 +4,6 @@ version: 0.1.0
 description: Telegram Bot for user communication
 type: communication
 
-# Lifecycle configuration (v2)
 lifecycle:
   npm: true
   service:
@@ -15,12 +14,10 @@ lifecycle:
     post-install: hooks/post-install.js
     post-upgrade: hooks/post-upgrade.js
 
-# Upgrade configuration
 upgrade:
   repo: zylos-ai/zylos-telegram
   branch: main
 
-# Component dependencies
 dependencies:
   - comm-bridge
 ---
