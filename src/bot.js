@@ -111,7 +111,7 @@ Added by: ${addedBy}
 To approve, run:
 node "${adminPath}" add-allowed-group "${chatId}" "${chatTitle}"`;
 
-  const sendPath = path.join(__dirname, 'send.js');
+  const sendPath = path.join(__dirname, '..', 'send.js');
   try {
     execSync(`node "${sendPath}" "${config.owner.chat_id}" '${message.replace(/'/g, "'\\''")}'`);
     console.log(`[bot] Notified owner about pending group: ${chatTitle}`);

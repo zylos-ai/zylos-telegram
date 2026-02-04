@@ -51,14 +51,21 @@ if (fs.existsSync(configPath)) {
       migrations.push('Added features.download_media');
     }
 
-    // Migration 2: Add smart_groups if missing
+    // Migration 2: Add allowed_groups if missing
+    if (config.allowed_groups === undefined) {
+      config.allowed_groups = [];
+      migrated = true;
+      migrations.push('Added allowed_groups array');
+    }
+
+    // Migration 3: Add smart_groups if missing
     if (config.smart_groups === undefined) {
       config.smart_groups = [];
       migrated = true;
       migrations.push('Added smart_groups array');
     }
 
-    // Migration 3: Ensure whitelist structure
+    // Migration 4: Ensure whitelist structure
     if (!config.whitelist) {
       config.whitelist = { chat_ids: [], usernames: [] };
       migrated = true;
@@ -76,14 +83,14 @@ if (fs.existsSync(configPath)) {
       }
     }
 
-    // Migration 4: Ensure owner structure
+    // Migration 5: Ensure owner structure
     if (!config.owner) {
       config.owner = { chat_id: null, username: null, bound_at: null };
       migrated = true;
       migrations.push('Added owner structure');
     }
 
-    // Migration 5: Ensure enabled field
+    // Migration 6: Ensure enabled field
     if (config.enabled === undefined) {
       config.enabled = true;
       migrated = true;

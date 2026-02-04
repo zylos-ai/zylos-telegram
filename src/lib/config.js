@@ -18,6 +18,7 @@ const DEFAULT_CONFIG = {
   enabled: true,
   owner: { chat_id: null, username: null, bound_at: null },
   whitelist: { chat_ids: [], usernames: [] },
+  allowed_groups: [],
   smart_groups: [],
   features: {
     auto_split_messages: true,
