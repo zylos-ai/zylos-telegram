@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url';
 import { loadConfig, getEnv } from './lib/config.js';
 import { hasOwner, bindOwner, isAuthorized, isAllowedGroup, addAllowedGroup, isSmartGroup } from './lib/auth.js';
 import { downloadPhoto, downloadDocument } from './lib/media.js';
+import { logMessage, getGroupContext, updateCursor, formatContextPrefix } from './lib/context.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -65,7 +66,7 @@ function sendToC4(source, endpoint, content) {
 /**
  * Format message for C4
  */
-function formatMessage(ctx, text, mediaPath = null) {
+function formatMessage(ctx, text, mediaPath = null, contextPrefix = '') {
   const chatType = ctx.chat.type; // 'private', 'group', 'supergroup'
   const username = ctx.from.username || ctx.from.first_name || 'unknown';
   const chatId = ctx.chat.id;
@@ -78,7 +79,7 @@ function formatMessage(ctx, text, mediaPath = null) {
     prefix = `[TG GROUP:${groupName}]`;
   }
 
-  let message = `${prefix} ${username} said: ${text}`;
+  let message = `${prefix} ${username} said: ${contextPrefix}${text}`;
 
   if (mediaPath) {
     message += ` ---- file: ${mediaPath}`;
@@ -232,23 +233,40 @@ bot.on('text', (ctx) => {
     const isMentioned = botUsername && ctx.message.text.includes(`@${botUsername}`);
     const senderIsOwner = config.owner && String(ctx.from.id) === String(config.owner.chat_id);
 
-    // Smart groups receive all messages (must be in allowed_groups too, implied)
+    // Log messages from allowed/smart groups for context
+    if (isAllowed || isSmartGrp) {
+      logMessage(chatId, ctx);
+    }
+
+    // Smart groups receive all messages
     if (isSmartGrp) {
       const message = formatMessage(ctx, ctx.message.text);
       sendToC4('telegram', String(chatId), message);
       return;
     }
 
-    // Allowed groups respond to @mentions
+    // Allowed groups respond to @mentions (with context)
     if (isAllowed && isMentioned) {
-      const message = formatMessage(ctx, ctx.message.text);
+      const contextMessages = getGroupContext(chatId);
+      const contextPrefix = formatContextPrefix(contextMessages);
+      updateCursor(chatId, ctx.message.message_id);
+      const cleanText = ctx.message.text.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim();
+      const message = formatMessage(ctx, cleanText || ctx.message.text, null, contextPrefix);
       sendToC4('telegram', String(chatId), message);
       return;
     }
 
-    // Owner can @mention bot in any group (even non-whitelisted)
+    // Owner can @mention bot in any group (even non-whitelisted, with context)
     if (senderIsOwner && isMentioned) {
-      const message = formatMessage(ctx, ctx.message.text);
+      // Log this message for future context if not already logged
+      if (!isAllowed && !isSmartGrp) {
+        logMessage(chatId, ctx);
+      }
+      const contextMessages = getGroupContext(chatId);
+      const contextPrefix = formatContextPrefix(contextMessages);
+      updateCursor(chatId, ctx.message.message_id);
+      const cleanText = ctx.message.text.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim();
+      const message = formatMessage(ctx, cleanText || ctx.message.text, null, contextPrefix);
       sendToC4('telegram', String(chatId), message);
       return;
     }
