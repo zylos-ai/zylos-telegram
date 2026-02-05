@@ -1,6 +1,6 @@
 ---
 name: telegram
-version: 0.1.0-beta.7
+version: 0.1.0-beta.8
 description: Telegram Bot for user communication
 type: communication
 
@@ -17,6 +17,12 @@ lifecycle:
 upgrade:
   repo: zylos-ai/zylos-telegram
   branch: main
+
+config:
+  required:
+    - name: TELEGRAM_BOT_TOKEN
+      description: Telegram Bot Token (从 @BotFather 获取)
+      sensitive: true
 
 dependencies:
   - comm-bridge
