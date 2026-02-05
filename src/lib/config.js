@@ -24,6 +24,9 @@ export const DEFAULT_CONFIG = {
     auto_split_messages: true,
     max_message_length: 4000,
     download_media: true
+  },
+  message: {
+    context_messages: 10
   }
 };
 
