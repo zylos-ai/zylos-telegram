@@ -1,6 +1,6 @@
 ---
 name: telegram
-version: 0.1.0-beta.8
+version: 0.1.0-beta.9
 description: Telegram Bot for user communication
 type: communication
 
@@ -114,3 +114,20 @@ node ~/.claude/skills/telegram/src/admin.js help
 ```
 
 After changes, restart: `pm2 restart zylos-telegram`
+
+## Group Context
+
+When responding to @mentions in groups, the bot includes recent message context
+so Claude understands the conversation. Context is retrieved from logged messages
+since the last response.
+
+Configuration in `config.json`:
+```json
+{
+  "message": {
+    "context_messages": 10
+  }
+}
+```
+
+Message logs are stored in `~/zylos/components/telegram/logs/<chat_id>.log`.
