@@ -68,22 +68,22 @@ if (!hasToken) {
   console.log('    echo "TELEGRAM_BOT_TOKEN=your_token" >> ' + ENV_FILE);
 }
 
-// 4. Restart service with ecosystem.config.js (for custom log paths, restart policy)
-console.log('\nConfiguring PM2 service with ecosystem.config.js...');
-const ecosystemPath = path.join(SKILL_DIR, 'ecosystem.config.js');
+// 4. Restart service with ecosystem.config.cjs (for custom log paths, restart policy)
+console.log('\nConfiguring PM2 service with ecosystem.config.cjs...');
+const ecosystemPath = path.join(SKILL_DIR, 'ecosystem.config.cjs');
 if (fs.existsSync(ecosystemPath)) {
   try {
     // Stop the basic service started by zylos CLI
     execSync('pm2 delete zylos-telegram 2>/dev/null || true', { stdio: 'pipe' });
     // Start with full ecosystem config
-    execSync(`pm2 start "${ecosystemPath}"`, { stdio: 'inherit' });
+    execSync(`pm2 start "${ecosystemPath}"`, { stdio: 'pipe' });
     execSync('pm2 save', { stdio: 'pipe' });
     console.log('  - Service configured with custom PM2 options');
   } catch (err) {
     console.error('  - PM2 restart failed:', err.message);
   }
 } else {
-  console.log('  - No ecosystem.config.js found, using default PM2 config');
+  console.log('  - No ecosystem.config.cjs found, using default PM2 config');
 }
 
 console.log('\n[post-install] Complete!');
