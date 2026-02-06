@@ -40,7 +40,7 @@ if (proxyUrl) {
 const bot = new Telegraf(botToken, botOptions);
 
 // C4 receive interface path
-const C4_RECEIVE = path.join(process.env.HOME, 'zylos/.claude/skills/comm-bridge/c4-receive.js');
+const C4_RECEIVE = path.join(process.env.HOME, 'zylos/.claude/skills/comm-bridge/scripts/c4-receive.js');
 
 /**
  * Send message to Claude via C4
