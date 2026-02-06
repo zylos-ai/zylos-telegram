@@ -7,12 +7,17 @@ type: communication
 lifecycle:
   npm: true
   service:
+    type: pm2
     name: zylos-telegram
     entry: src/bot.js
   data_dir: ~/zylos/components/telegram
   hooks:
     post-install: hooks/post-install.js
     post-upgrade: hooks/post-upgrade.js
+  preserve:
+    - config.json
+    - .env
+    - data/
 
 upgrade:
   repo: zylos-ai/zylos-telegram

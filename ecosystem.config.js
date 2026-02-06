@@ -1,11 +1,11 @@
-const path = require('path');
-const os = require('os');
+import path from 'node:path';
+import os from 'node:os';
 
-module.exports = {
+export default {
   apps: [{
     name: 'zylos-telegram',
     script: 'src/bot.js',
-    cwd: path.join(os.homedir(), '.claude/skills/telegram'),
+    cwd: path.join(os.homedir(), 'zylos/.claude/skills/telegram'),
     env: {
       NODE_ENV: 'production'
     },
