@@ -49,7 +49,7 @@ zylos-telegram 是 Zylos0 的核心通讯组件，负责通过 Telegram Bot API 
 ### 2.1 Skills 目录 (代码)
 
 ```
-~/.claude/skills/telegram/
+~/zylos/.claude/skills/telegram/
 ├── SKILL.md              # 组件元数据 (v2 格式，含 lifecycle)
 ├── package.json          # 依赖定义
 ├── ecosystem.config.js   # PM2 配置
@@ -168,7 +168,7 @@ Claude 需要回复
       │ c4-send telegram <chat_id> "消息内容"
       ▼
 ┌─────────────────────────────────────┐
-│ ~/.claude/skills/telegram/src/send.js │
+│ ~/zylos/.claude/skills/telegram/src/send.js │
 └─────┬───────────────────────────────┘
       │ 1. 解析参数
       │ 2. 检查媒体前缀 [MEDIA:type]
@@ -183,7 +183,7 @@ Claude 需要回复
 ### 4.3 send.js 接口规范
 
 ```bash
-# 位置: ~/.claude/skills/telegram/src/send.js
+# 位置: ~/zylos/.claude/skills/telegram/src/send.js
 # 调用: node send.js <chat_id> <message>
 # 返回: 0 成功, 非 0 失败
 
@@ -408,14 +408,14 @@ node send.js "12345" "Hello world"
 
 ```javascript
 // ecosystem.config.js
-const path = require('path');
-const os = require('os');
+import path from 'node:path';
+import os from 'node:os';
 
-module.exports = {
+export default {
   apps: [{
     name: 'zylos-telegram',
     script: 'src/bot.js',
-    cwd: path.join(os.homedir(), '.claude/skills/telegram'),
+    cwd: path.join(os.homedir(), 'zylos/.claude/skills/telegram'),
     env: {
       NODE_ENV: 'production'
     }
@@ -429,7 +429,7 @@ module.exports = {
 
 ```bash
 # 启动
-pm2 start ~/.claude/skills/telegram/ecosystem.config.js
+pm2 start ~/zylos/.claude/skills/telegram/ecosystem.config.js
 
 # 停止
 pm2 stop zylos-telegram
@@ -485,7 +485,7 @@ lifecycle:
 ```bash
 # 安装
 zylos install telegram
-# 1. git clone 到 ~/.claude/skills/telegram
+# 1. git clone 到 ~/zylos/.claude/skills/telegram
 # 2. npm install
 # 3. 创建 data_dir
 # 4. PM2 注册服务
