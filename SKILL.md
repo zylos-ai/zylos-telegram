@@ -7,12 +7,17 @@ type: communication
 lifecycle:
   npm: true
   service:
+    type: pm2
     name: zylos-telegram
     entry: src/bot.js
   data_dir: ~/zylos/components/telegram
   hooks:
     post-install: hooks/post-install.js
     post-upgrade: hooks/post-upgrade.js
+  preserve:
+    - config.json
+    - .env
+    - data/
 
 upgrade:
   repo: zylos-ai/zylos-telegram
@@ -46,12 +51,12 @@ Telegram messaging component for Zylos Agent.
 
 Via C4 Bridge:
 ```bash
-~/.claude/skills/comm-bridge/c4-send.sh telegram <chat_id> "message"
+~/zylos/.claude/skills/comm-bridge/c4-send.sh telegram <chat_id> "message"
 ```
 
 Or directly (for testing):
 ```bash
-node ~/.claude/skills/telegram/send.js <chat_id> "message"
+node ~/zylos/.claude/skills/telegram/send.js <chat_id> "message"
 ```
 
 ## Media Messages
@@ -88,29 +93,29 @@ Manage bot configuration via `admin.js`:
 
 ```bash
 # Show full config
-node ~/.claude/skills/telegram/src/admin.js show
+node ~/zylos/.claude/skills/telegram/src/admin.js show
 
 # Allowed Groups (respond to @mentions)
-node ~/.claude/skills/telegram/src/admin.js list-allowed-groups
-node ~/.claude/skills/telegram/src/admin.js add-allowed-group <chat_id> <name>
-node ~/.claude/skills/telegram/src/admin.js remove-allowed-group <chat_id>
+node ~/zylos/.claude/skills/telegram/src/admin.js list-allowed-groups
+node ~/zylos/.claude/skills/telegram/src/admin.js add-allowed-group <chat_id> <name>
+node ~/zylos/.claude/skills/telegram/src/admin.js remove-allowed-group <chat_id>
 
 # Smart Groups (receive all messages, no @mention needed)
-node ~/.claude/skills/telegram/src/admin.js list-smart-groups
-node ~/.claude/skills/telegram/src/admin.js add-smart-group <chat_id> <name>
-node ~/.claude/skills/telegram/src/admin.js remove-smart-group <chat_id>
+node ~/zylos/.claude/skills/telegram/src/admin.js list-smart-groups
+node ~/zylos/.claude/skills/telegram/src/admin.js add-smart-group <chat_id> <name>
+node ~/zylos/.claude/skills/telegram/src/admin.js remove-smart-group <chat_id>
 
 # Whitelist
-node ~/.claude/skills/telegram/src/admin.js list-whitelist
-node ~/.claude/skills/telegram/src/admin.js add-whitelist chat_id <id>
-node ~/.claude/skills/telegram/src/admin.js add-whitelist username <name>
-node ~/.claude/skills/telegram/src/admin.js remove-whitelist chat_id <id>
+node ~/zylos/.claude/skills/telegram/src/admin.js list-whitelist
+node ~/zylos/.claude/skills/telegram/src/admin.js add-whitelist chat_id <id>
+node ~/zylos/.claude/skills/telegram/src/admin.js add-whitelist username <name>
+node ~/zylos/.claude/skills/telegram/src/admin.js remove-whitelist chat_id <id>
 
 # Owner info
-node ~/.claude/skills/telegram/src/admin.js show-owner
+node ~/zylos/.claude/skills/telegram/src/admin.js show-owner
 
 # Help
-node ~/.claude/skills/telegram/src/admin.js help
+node ~/zylos/.claude/skills/telegram/src/admin.js help
 ```
 
 After changes, restart: `pm2 restart zylos-telegram`
