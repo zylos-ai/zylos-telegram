@@ -52,7 +52,7 @@ function sendToC4(source, endpoint, content) {
   }
   const safeContent = content.replace(/'/g, "'\\''");
 
-  const cmd = `node "${C4_RECEIVE}" --source "${source}" --endpoint "${endpoint}" --content '${safeContent}'`;
+  const cmd = `node "${C4_RECEIVE}" --channel "${source}" --endpoint "${endpoint}" --content '${safeContent}'`;
 
   exec(cmd, (error, stdout, stderr) => {
     if (error) {
