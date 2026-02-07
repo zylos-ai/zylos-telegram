@@ -51,22 +51,22 @@ Telegram messaging component for Zylos Agent.
 
 Via C4 Bridge:
 ```bash
-~/zylos/.claude/skills/comm-bridge/c4-send.sh telegram <chat_id> "message"
+node ~/zylos/.claude/skills/comm-bridge/scripts/c4-send.js "telegram" "<chat_id>" "message"
 ```
 
 Or directly (for testing):
 ```bash
-node ~/zylos/.claude/skills/telegram/send.js <chat_id> "message"
+node ~/zylos/.claude/skills/telegram/scripts/send.js <chat_id> "message"
 ```
 
 ## Media Messages
 
 ```bash
 # Send image
-c4-send.sh telegram <chat_id> "[MEDIA:image]/path/to/photo.jpg"
+node c4-send.js "telegram" "<chat_id>" "[MEDIA:image]/path/to/photo.jpg"
 
 # Send file
-c4-send.sh telegram <chat_id> "[MEDIA:file]/path/to/document.pdf"
+node c4-send.js "telegram" "<chat_id>" "[MEDIA:file]/path/to/document.pdf"
 ```
 
 ## Config Location
