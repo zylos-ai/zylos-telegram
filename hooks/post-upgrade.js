@@ -29,26 +29,27 @@ if (fs.existsSync(configPath)) {
     let migrated = false;
     const migrations = [];
 
-    // Migration 1: Ensure features object and all fields
+    // Migration 1: Ensure features object and active fields
     if (!config.features) {
-      config.features = {};
+      config.features = { download_media: true };
       migrated = true;
       migrations.push('Added features object');
-    }
-    if (config.features.auto_split_messages === undefined) {
-      config.features.auto_split_messages = true;
-      migrated = true;
-      migrations.push('Added features.auto_split_messages');
-    }
-    if (config.features.max_message_length === undefined) {
-      config.features.max_message_length = 4000;
-      migrated = true;
-      migrations.push('Added features.max_message_length');
     }
     if (config.features.download_media === undefined) {
       config.features.download_media = true;
       migrated = true;
       migrations.push('Added features.download_media');
+    }
+    // Clean up dead config fields
+    if (config.features.auto_split_messages !== undefined) {
+      delete config.features.auto_split_messages;
+      migrated = true;
+      migrations.push('Removed dead features.auto_split_messages');
+    }
+    if (config.features.max_message_length !== undefined) {
+      delete config.features.max_message_length;
+      migrated = true;
+      migrations.push('Removed dead features.max_message_length');
     }
 
     // Migration 2: Add allowed_groups if missing
@@ -95,6 +96,17 @@ if (fs.existsSync(configPath)) {
       config.enabled = true;
       migrated = true;
       migrations.push('Added enabled field');
+    }
+
+    // Migration 7: Ensure message object with context_messages
+    if (!config.message) {
+      config.message = { context_messages: 10 };
+      migrated = true;
+      migrations.push('Added message.context_messages');
+    } else if (config.message.context_messages === undefined) {
+      config.message.context_messages = 10;
+      migrated = true;
+      migrations.push('Added message.context_messages');
     }
 
     // Save if migrated

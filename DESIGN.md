@@ -52,17 +52,19 @@ zylos-telegram 是 Zylos0 的核心通讯组件，负责通过 Telegram Bot API 
 ~/zylos/.claude/skills/telegram/
 ├── SKILL.md              # 组件元数据 (v2 格式，含 lifecycle)
 ├── package.json          # 依赖定义
-├── ecosystem.config.js   # PM2 配置
-├── send.js               # C4 标准发送接口 (根目录)
+├── ecosystem.config.cjs  # PM2 配置
 ├── hooks/
 │   ├── post-install.js   # 安装后钩子 (创建目录、配置 PM2)
 │   └── post-upgrade.js   # 升级后钩子 (配置迁移)
+├── scripts/
+│   └── send.js           # C4 标准发送接口
 └── src/
     ├── bot.js            # 主程序入口
     ├── admin.js          # 管理 CLI
     └── lib/
         ├── config.js     # 配置加载模块
         ├── auth.js       # 认证模块 (Owner 绑定 + 白名单)
+        ├── context.js    # 群聊上下文管理
         └── media.js      # 媒体处理模块
 ```
 
@@ -91,7 +93,7 @@ zylos-telegram 是 Zylos0 的核心通讯组件，负责通过 Telegram Bot API 
 │                                                          │
 │  ┌──────────────┐    ┌──────────────┐                   │
 │  │   bot.js     │───▶│   auth.js    │                   │
-│  │  (Telegraf)  │    │ 白名单+Key   │                   │
+│  │  (Telegraf)  │    │ Owner+白名单  │                   │
 │  └──────┬───────┘    └──────────────┘                   │
 │         │                                                │
 │         │ 消息接收                                       │
@@ -102,7 +104,7 @@ zylos-telegram 是 Zylos0 的核心通讯组件，负责通过 Telegram Bot API 
 │         │                                                │
 │         ▼                                                │
 │  ┌──────────────────────────────────┐                   │
-│  │ c4-receive (~/zylos/core/)       │ → C4 Bridge       │
+│  │ c4-receive (comm-bridge)         │ → C4 Bridge       │
 │  └──────────────────────────────────┘                   │
 │                                                          │
 │  ┌──────────────┐                                       │
@@ -120,7 +122,8 @@ zylos-telegram 是 Zylos0 的核心通讯组件，负责通过 Telegram Bot API 
 | 配置 | lib/config.js | 加载 .env + config.json |
 | 认证 | lib/auth.js | Owner 绑定 + 白名单验证 |
 | 媒体 | lib/media.js | 下载图片/文件到本地 |
-| 发送 | send.js | C4 标准接口，发送文本和媒体 |
+| 上下文 | lib/context.js | 群聊消息日志 + @mention 上下文 |
+| 发送 | scripts/send.js | C4 标准接口，发送文本和媒体 |
 
 ---
 
@@ -135,19 +138,16 @@ zylos-telegram 是 Zylos0 的核心通讯组件，负责通过 Telegram Bot API 
 ┌─────────────┐
 │  bot.js     │  监听 Telegram API
 └─────┬───────┘
-      │ 1. 白名单验证
-      │ 2. Product Key 验证 (首次用户)
+      │ 1. Owner 绑定 (首次用户)
+      │ 2. 白名单验证
+      │ 3. formatMessage() 格式化
+      │    "[TG DM] username said: 消息内容"
+      │    "[TG GROUP:groupname] username said: 消息内容"
       ▼
 ┌─────────────┐
-│ message.js  │  格式化消息
+│ c4-receive  │  comm-bridge 接口
 └─────┬───────┘
-      │ 格式: "[TG DM] username said: 消息内容"
-      │       "[TG GROUP:groupname] username said: 消息内容"
-      ▼
-┌─────────────┐
-│ c4-receive  │  C4 Bridge 接口
-└─────┬───────┘
-      │ --source telegram
+      │ --channel telegram
       │ --endpoint <chat_id>
       │ --content "..."
       ▼
@@ -167,9 +167,9 @@ Claude 需要回复
 └─────┬───────┘
       │ c4-send telegram <chat_id> "消息内容"
       ▼
-┌─────────────────────────────────────┐
-│ ~/zylos/.claude/skills/telegram/src/send.js │
-└─────┬───────────────────────────────┘
+┌──────────────────────────────────────────┐
+│ ~/zylos/.claude/skills/telegram/scripts/send.js │
+└─────┬────────────────────────────────────┘
       │ 1. 解析参数
       │ 2. 检查媒体前缀 [MEDIA:type]
       │ 3. 长消息自动分段
@@ -183,7 +183,7 @@ Claude 需要回复
 ### 4.3 send.js 接口规范
 
 ```bash
-# 位置: ~/zylos/.claude/skills/telegram/src/send.js
+# 位置: ~/zylos/.claude/skills/telegram/scripts/send.js
 # 调用: node send.js <chat_id> <message>
 # 返回: 0 成功, 非 0 失败
 
@@ -239,6 +239,8 @@ node send.js "8101553026" "[MEDIA:file]/path/to/document.pdf"
     "usernames": []
   },
 
+  "allowed_groups": [],
+
   "smart_groups": [
     {
       "chat_id": "-100123456789",
@@ -247,9 +249,11 @@ node send.js "8101553026" "[MEDIA:file]/path/to/document.pdf"
   ],
 
   "features": {
-    "auto_split_messages": true,
-    "max_message_length": 4000,
     "download_media": true
+  },
+
+  "message": {
+    "context_messages": 10
   }
 }
 ```
@@ -264,10 +268,10 @@ node send.js "8101553026" "[MEDIA:file]/path/to/document.pdf"
 | owner.bound_at | string | 绑定时间 |
 | whitelist.chat_ids | string[] | 允许的 Telegram chat_id 列表 |
 | whitelist.usernames | string[] | 允许的 Telegram 用户名列表 |
+| allowed_groups | object[] | @mention 时响应的群组 (chat_id + name) |
 | smart_groups | object[] | 监听所有消息的群组 (chat_id + name) |
-| features.auto_split_messages | boolean | 自动分段长消息 |
-| features.max_message_length | number | 单条消息最大长度 |
 | features.download_media | boolean | 是否下载媒体文件 |
+| message.context_messages | number | 群聊 @mention 时附带的最近消息数 (默认 10) |
 
 ### 5.3 环境变量 (~/zylos/.env)
 
@@ -350,13 +354,7 @@ Owner 拥有特殊权限:
 
 ### 6.4 安全日志
 
-所有未授权访问记录到 `logs/access.log`:
-
-```
-2026-02-02T10:30:45Z [BLOCKED] chat_id=123456 username=unknown action=message
-2026-02-02T10:31:00Z [KEY_INVALID] chat_id=123456 key=ZYLOS-XXXX-XXXX
-2026-02-02T10:32:00Z [KEY_VALID] chat_id=123456 key=ZYLOS-A7K2-... auto_whitelist=true
-```
+所有未授权访问通过 console 记录，日志由 PM2 管理。
 
 ---
 
@@ -407,11 +405,11 @@ node send.js "12345" "Hello world"
 ### 8.1 PM2 配置
 
 ```javascript
-// ecosystem.config.js
-import path from 'node:path';
-import os from 'node:os';
+// ecosystem.config.cjs (CJS format for PM2 compatibility)
+const path = require('path');
+const os = require('os');
 
-export default {
+module.exports = {
   apps: [{
     name: 'zylos-telegram',
     script: 'src/bot.js',
@@ -429,7 +427,7 @@ export default {
 
 ```bash
 # 启动
-pm2 start ~/zylos/.claude/skills/telegram/ecosystem.config.js
+pm2 start ~/zylos/.claude/skills/telegram/ecosystem.config.cjs
 
 # 停止
 pm2 stop zylos-telegram
@@ -468,7 +466,7 @@ lifecycle:
 - 创建子目录 (media/, logs/)
 - 生成默认 config.json
 - 检查环境变量
-- 用 ecosystem.config.js 配置 PM2
+- 用 ecosystem.config.cjs 配置 PM2
 
 ### 9.3 hooks/post-upgrade.js
 

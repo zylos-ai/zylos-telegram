@@ -54,12 +54,21 @@ function sendToC4(source, endpoint, content) {
 
   const cmd = `node "${C4_RECEIVE}" --channel "${source}" --endpoint "${endpoint}" --content '${safeContent}'`;
 
-  exec(cmd, (error, stdout, stderr) => {
-    if (error) {
-      console.error(`[telegram] C4 receive error: ${error.message}`);
-    } else {
+  exec(cmd, (error) => {
+    if (!error) {
       console.log(`[telegram] Sent to C4: ${content.substring(0, 50)}...`);
+      return;
     }
+    console.warn(`[telegram] C4 send failed, retrying in 2s: ${error.message}`);
+    setTimeout(() => {
+      exec(cmd, (retryError) => {
+        if (retryError) {
+          console.error(`[telegram] C4 send failed after retry: ${retryError.message}`);
+        } else {
+          console.log(`[telegram] Sent to C4 (retry): ${content.substring(0, 50)}...`);
+        }
+      });
+    }, 2000);
   });
 }
 
@@ -120,7 +129,7 @@ Added by: ${addedBy}
 To approve, run:
 node "${adminPath}" add-allowed-group "${chatId}" "${chatTitle}"`;
 
-  const sendPath = path.join(__dirname, '..', 'send.js');
+  const sendPath = path.join(__dirname, '..', 'scripts', 'send.js');
   try {
     execSync(`node "${sendPath}" "${config.owner.chat_id}" '${message.replace(/'/g, "'\\''")}'`);
     console.log(`[telegram] Notified owner about pending group: ${chatTitle}`);

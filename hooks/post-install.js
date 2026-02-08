@@ -12,7 +12,7 @@
  * - Create subdirectories (media, logs)
  * - Create default config.json
  * - Check for required environment variables
- * - Restart service with ecosystem.config.js (for custom PM2 options)
+ * - Restart service with ecosystem.config.cjs (for custom PM2 options)
  */
 
 import fs from 'fs';
@@ -88,7 +88,27 @@ if (fs.existsSync(ecosystemPath)) {
 
 console.log('\n[post-install] Complete!');
 
+console.log('\n========================================');
+console.log('  Telegram Bot Setup Checklist');
+console.log('========================================');
+console.log('');
+console.log('1. Create a bot via @BotFather on Telegram:');
+console.log('   - Send /newbot to @BotFather');
+console.log('   - Follow prompts to get your Bot Token');
+console.log('');
 if (!hasToken) {
-  console.log('\nNext: Add TELEGRAM_BOT_TOKEN and restart:');
-  console.log('  pm2 restart zylos-telegram');
+  console.log('2. Add Bot Token to ~/zylos/.env:');
+  console.log('   echo "TELEGRAM_BOT_TOKEN=your_token" >> ~/zylos/.env');
+} else {
+  console.log('2. Bot Token: already configured');
 }
+console.log('');
+console.log('3. (Optional) If behind a firewall/proxy, add to ~/zylos/.env:');
+console.log('   TELEGRAM_PROXY_URL=http://your-proxy:port');
+console.log('');
+console.log('4. Restart the bot:');
+console.log('   pm2 restart zylos-telegram');
+console.log('');
+console.log('5. Send a message to your bot on Telegram.');
+console.log('   First user to interact becomes the owner (admin).');
+console.log('========================================');

@@ -59,7 +59,7 @@ export function getGroupContext(chatId) {
 
   const config = loadConfig();
   const MIN_CONTEXT = 5;
-  const MAX_CONTEXT = config.message?.context_messages || 10;
+  const MAX_CONTEXT = config.message?.context_messages ?? 10;
   const cursor = groupCursors[chatId] || null;
 
   const lines = fs.readFileSync(logFile, 'utf-8').trim().split('\n').filter(l => l);

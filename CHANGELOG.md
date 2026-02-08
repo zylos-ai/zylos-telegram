@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-beta.16] - 2026-02-08
+
+### Fixed
+- Removed dead config fields: `features.auto_split_messages` and `features.max_message_length` (never used, send.js uses hardcoded constant)
+- `sendToC4` now retries once after 2s on failure (was fire-and-forget)
+- `context.js`: changed `|| 10` to `?? 10` so `context_messages: 0` is respected
+- Post-upgrade migrations: stop adding dead fields, add cleanup for existing installs, add `message.context_messages` migration
+- `notifyOwnerPendingGroup` broken since beta.14: send.js path not updated when moved to scripts/ (would fail when bot is added to a new group)
+- DESIGN.md: removed phantom "Product Key" references, stale security log example, phantom "message.js" module
+- DESIGN.md: fixed c4-receive path, send.js path (root → scripts/), directory tree (added context.js, ecosystem.config.cjs), `--source` → `--channel`, added allowed_groups and message.context_messages to config docs
+- DESIGN.md: PM2 config example updated to CJS format matching actual ecosystem.config.cjs
+- README.md: updated version badge from beta.9 to beta.16
+
+### Added
+- Post-install: full Telegram Bot Setup Checklist (BotFather link, proxy hint, owner binding note)
+- SKILL.md: added Environment Variables section documenting `TELEGRAM_PROXY_URL`
+
+---
+
 ## [0.1.0-beta.15] - 2026-02-07
 
 ### Changed

@@ -21,8 +21,6 @@ export const DEFAULT_CONFIG = {
   allowed_groups: [],
   smart_groups: [],
   features: {
-    auto_split_messages: true,
-    max_message_length: 4000,
     download_media: true
   },
   message: {
