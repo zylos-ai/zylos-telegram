@@ -1,6 +1,6 @@
 ---
 name: telegram
-version: 0.1.0-beta.15
+version: 0.1.0-beta.16
 description: Telegram Bot for user communication
 type: communication
 
@@ -74,6 +74,18 @@ node c4-send.js "telegram" "<chat_id>" "[MEDIA:file]/path/to/document.pdf"
 - Config: `~/zylos/components/telegram/config.json`
 - Media: `~/zylos/components/telegram/media/`
 - Logs: `~/zylos/components/telegram/logs/`
+
+## Environment Variables
+
+Required in `~/zylos/.env`:
+
+```bash
+# Telegram Bot Token (required, from @BotFather)
+TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+
+# Proxy URL (optional, needed behind firewalls e.g. China mainland)
+TELEGRAM_PROXY_URL=http://192.168.3.9:7890
+```
 
 ## Service Management
 
