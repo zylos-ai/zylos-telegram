@@ -102,10 +102,12 @@ export function removeFromWhitelist(config, chatId) {
 
 /**
  * Check if group is in allowed_groups (can respond to @mentions)
+ * When allowed_groups is empty or not set, all groups are allowed (open mode).
+ * When allowed_groups has entries, only listed groups are allowed (restricted mode).
  */
 export function isAllowedGroup(config, chatId) {
   chatId = String(chatId);
-  if (!config.allowed_groups) return false;
+  if (!config.allowed_groups || config.allowed_groups.length === 0) return true;
   return config.allowed_groups.some(g => String(g.chat_id) === chatId);
 }
 
