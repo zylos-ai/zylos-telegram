@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-beta.19] - 2026-02-08
+
+### Added
+- Lazy download for group photo/document messages: log metadata (file_id, msg_id) for context instead of downloading immediately in non-smart groups
+- Photo/document messages now logged in group context (were previously invisible)
+
+### Changed
+- Smart groups: photos/documents still download immediately
+- Non-smart groups: photos/documents only logged with metadata, available via context on next @mention
+
+---
+
 ## [0.1.0-beta.18] - 2026-02-08
 
 ### Fixed

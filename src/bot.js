@@ -296,34 +296,57 @@ bot.on('photo', async (ctx) => {
   const chatType = ctx.chat.type;
   const chatId = ctx.chat.id;
 
-  // For private chat: must be authorized
+  // For private chat: must be authorized, download immediately
   if (chatType === 'private') {
     if (!isAuthorized(config, ctx)) {
       ctx.reply('Sorry, this bot is private.');
       return;
     }
-  } else {
-    // For group chat: must be allowed or smart group
-    if (!isAllowedGroup(config, chatId) && !isSmartGroup(config, chatId)) {
-      return; // Silently ignore
+    if (!config.features.download_media) {
+      ctx.reply('Media download is disabled.');
+      return;
     }
-  }
-
-  if (!config.features.download_media) {
-    ctx.reply('Media download is disabled.');
+    try {
+      const localPath = await downloadPhoto(ctx);
+      const caption = ctx.message.caption || '[sent a photo]';
+      const message = formatMessage(ctx, caption, localPath);
+      sendToC4('telegram', String(chatId), message);
+      ctx.reply('Photo received!');
+    } catch (err) {
+      console.error(`[telegram] Photo download error: ${err.message}`);
+      ctx.reply('Failed to download photo.');
+    }
     return;
   }
 
-  try {
-    const localPath = await downloadPhoto(ctx);
-    const caption = ctx.message.caption || '[sent a photo]';
-    const message = formatMessage(ctx, caption, localPath);
-    sendToC4('telegram', String(chatId), message);
-    ctx.reply('Photo received!');
-  } catch (err) {
-    console.error(`[telegram] Photo download error: ${err.message}`);
-    ctx.reply('Failed to download photo.');
+  // Group chat
+  const isAllowed = isAllowedGroup(config, chatId);
+  const isSmartGrp = isSmartGroup(config, chatId);
+  if (!isAllowed && !isSmartGrp) return;
+
+  // Build log text with photo metadata for context
+  const photos = ctx.message.photo;
+  const fileId = photos[photos.length - 1].file_id;
+  const caption = ctx.message.caption || '';
+  const photoInfo = `[photo, file_id: ${fileId}, msg_id: ${ctx.message.message_id}]`;
+  const logText = caption ? `${caption}\n${photoInfo}` : photoInfo;
+  logMessage(chatId, ctx, logText);
+
+  // Smart groups: download immediately
+  if (isSmartGrp) {
+    if (!config.features.download_media) return;
+    try {
+      const localPath = await downloadPhoto(ctx);
+      const message = formatMessage(ctx, caption || '[sent a photo]', localPath);
+      sendToC4('telegram', String(chatId), message);
+    } catch (err) {
+      console.error(`[telegram] Photo download error: ${err.message}`);
+    }
+    return;
   }
+
+  // Non-smart groups: logged with metadata, lazy download via context
+  console.log(`[telegram] Photo logged for lazy download in group ${chatId}`);
 });
 
 /**
@@ -335,34 +358,56 @@ bot.on('document', async (ctx) => {
   const chatType = ctx.chat.type;
   const chatId = ctx.chat.id;
 
-  // For private chat: must be authorized
+  // For private chat: must be authorized, download immediately
   if (chatType === 'private') {
     if (!isAuthorized(config, ctx)) {
       ctx.reply('Sorry, this bot is private.');
       return;
     }
-  } else {
-    // For group chat: must be allowed or smart group
-    if (!isAllowedGroup(config, chatId) && !isSmartGroup(config, chatId)) {
-      return; // Silently ignore
+    if (!config.features.download_media) {
+      ctx.reply('Media download is disabled.');
+      return;
     }
-  }
-
-  if (!config.features.download_media) {
-    ctx.reply('Media download is disabled.');
+    try {
+      const localPath = await downloadDocument(ctx);
+      const caption = ctx.message.caption || `[sent a file: ${ctx.message.document.file_name}]`;
+      const message = formatMessage(ctx, caption, localPath);
+      sendToC4('telegram', String(chatId), message);
+      ctx.reply('File received!');
+    } catch (err) {
+      console.error(`[telegram] Document download error: ${err.message}`);
+      ctx.reply('Failed to download file.');
+    }
     return;
   }
 
-  try {
-    const localPath = await downloadDocument(ctx);
-    const caption = ctx.message.caption || `[sent a file: ${ctx.message.document.file_name}]`;
-    const message = formatMessage(ctx, caption, localPath);
-    sendToC4('telegram', String(chatId), message);
-    ctx.reply('File received!');
-  } catch (err) {
-    console.error(`[telegram] Document download error: ${err.message}`);
-    ctx.reply('Failed to download file.');
+  // Group chat
+  const isAllowed = isAllowedGroup(config, chatId);
+  const isSmartGrp = isSmartGroup(config, chatId);
+  if (!isAllowed && !isSmartGrp) return;
+
+  // Build log text with file metadata for context
+  const doc = ctx.message.document;
+  const caption = ctx.message.caption || '';
+  const fileInfo = `[file: ${doc.file_name}, file_id: ${doc.file_id}, msg_id: ${ctx.message.message_id}]`;
+  const logText = caption ? `${caption}\n${fileInfo}` : fileInfo;
+  logMessage(chatId, ctx, logText);
+
+  // Smart groups: download immediately
+  if (isSmartGrp) {
+    if (!config.features.download_media) return;
+    try {
+      const localPath = await downloadDocument(ctx);
+      const message = formatMessage(ctx, caption || `[sent a file: ${doc.file_name}]`, localPath);
+      sendToC4('telegram', String(chatId), message);
+    } catch (err) {
+      console.error(`[telegram] Document download error: ${err.message}`);
+    }
+    return;
   }
+
+  // Non-smart groups: logged with metadata, lazy download via context
+  console.log(`[telegram] Document logged for lazy download in group ${chatId}`);
 });
 
 /**

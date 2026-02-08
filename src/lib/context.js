@@ -29,13 +29,16 @@ function saveCursors() {
 
 /**
  * Log a message to the chat's log file
+ * @param {string} chatId
+ * @param {object} ctx - Telegraf context
+ * @param {string} [textOverride] - Override text (e.g., with file metadata for lazy download)
  */
-export function logMessage(chatId, ctx) {
+export function logMessage(chatId, ctx, textOverride = null) {
   chatId = String(chatId);
   const username = ctx.from.username || ctx.from.first_name || 'unknown';
   const userId = ctx.from.id;
   const messageId = ctx.message.message_id;
-  const text = ctx.message.text || ctx.message.caption || '';
+  const text = textOverride || ctx.message.text || ctx.message.caption || '';
 
   const logEntry = {
     timestamp: new Date().toISOString(),
