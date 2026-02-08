@@ -6,25 +6,22 @@
  * - git clone
  * - npm install
  * - create data_dir
- * - register PM2 service (basic)
+ * - register PM2 service (uses ecosystem.config.cjs automatically)
  *
  * This hook handles telegram-specific setup:
  * - Create subdirectories (media, logs)
  * - Create default config.json
  * - Check for required environment variables
- * - Restart service with ecosystem.config.cjs (for custom PM2 options)
  */
 
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const HOME = process.env.HOME;
-const SKILL_DIR = path.dirname(__dirname);
 const DATA_DIR = path.join(HOME, 'zylos/components/telegram');
 const ENV_FILE = path.join(HOME, 'zylos/.env');
 
@@ -68,23 +65,8 @@ if (!hasToken) {
   console.log('    echo "TELEGRAM_BOT_TOKEN=your_token" >> ' + ENV_FILE);
 }
 
-// 4. Restart service with ecosystem.config.cjs (for custom log paths, restart policy)
-console.log('\nConfiguring PM2 service with ecosystem.config.cjs...');
-const ecosystemPath = path.join(SKILL_DIR, 'ecosystem.config.cjs');
-if (fs.existsSync(ecosystemPath)) {
-  try {
-    // Stop the basic service started by zylos CLI
-    execSync('pm2 delete zylos-telegram 2>/dev/null || true', { stdio: 'pipe' });
-    // Start with full ecosystem config
-    execSync(`pm2 start "${ecosystemPath}"`, { stdio: 'pipe' });
-    execSync('pm2 save', { stdio: 'pipe' });
-    console.log('  - Service configured with custom PM2 options');
-  } catch (err) {
-    console.error('  - PM2 restart failed:', err.message);
-  }
-} else {
-  console.log('  - No ecosystem.config.cjs found, using default PM2 config');
-}
+// Note: PM2 service is configured by zylos CLI's registerService()
+// which automatically uses ecosystem.config.cjs when available.
 
 console.log('\n[post-install] Complete!');
 
