@@ -2,11 +2,9 @@
 /**
  * Post-install hook for zylos-telegram
  *
- * Called by zylos CLI after standard installation steps:
- * - git clone
- * - npm install
- * - create data_dir
- * - register PM2 service (uses ecosystem.config.cjs automatically)
+ * Called by Claude after CLI installation (zylos add --json).
+ * CLI handles: download, npm install, manifest, registration.
+ * Claude handles: config collection, this hook, service start.
  *
  * This hook handles telegram-specific setup:
  * - Create subdirectories (media, logs)
@@ -65,8 +63,7 @@ if (!hasToken) {
   console.log('    echo "TELEGRAM_BOT_TOKEN=your_token" >> ' + ENV_FILE);
 }
 
-// Note: PM2 service is configured by zylos CLI's registerService()
-// which automatically uses ecosystem.config.cjs when available.
+// Note: PM2 service is started by Claude after this hook completes.
 
 console.log('\n[post-install] Complete!');
 
