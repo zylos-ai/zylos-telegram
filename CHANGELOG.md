@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-beta.20] - 2026-02-09
+
+### Added
+- `hooks/pre-upgrade.js`: config backup before upgrades
+- Declared pre-upgrade hook in SKILL.md
+
+### Changed
+- Hook comments updated: hooks are now executed by Claude, not CLI
+- Service restart is handled by Claude after hooks complete
+
+---
+
 ## [0.1.0-beta.19] - 2026-02-08
 
 ### Added
