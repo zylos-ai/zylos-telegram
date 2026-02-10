@@ -8,6 +8,10 @@
     "start": "node src/bot.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "homepage": "https://github.com/zylos-ai/zylos-telegram#readme",
+  "bugs": {
+    "url": "https://github.com/zylos-ai/zylos-telegram/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zylos-ai/zylos-telegram.git"
@@ -18,7 +22,7 @@
     "bot",
     "agent"
   ],
-  "author": "zylos-ai",
+  "author": "Zylos AI",
   "license": "MIT",
   "dependencies": {
     "telegraf": "^4.16.3",

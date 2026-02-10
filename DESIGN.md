@@ -280,7 +280,7 @@ node send.js "8101553026" "[MEDIA:file]/path/to/document.pdf"
 TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
 
 # 代理地址 (可选，中国大陆需要)
-TELEGRAM_PROXY_URL=http://192.168.3.9:7890
+TELEGRAM_PROXY_URL=http://your-proxy-host:port
 ```
 
 **说明:** 密钥和代理统一在 .env 中配置，不在 config.json 中重复。
