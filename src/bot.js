@@ -43,29 +43,60 @@ const bot = new Telegraf(botToken, botOptions);
 const C4_RECEIVE = path.join(process.env.HOME, 'zylos/.claude/skills/comm-bridge/scripts/c4-receive.js');
 
 /**
- * Send message to Claude via C4
+ * Parse c4-receive JSON response from stdout.
+ * Returns parsed object or null if parsing fails.
  */
-function sendToC4(source, endpoint, content) {
+function parseC4Response(stdout) {
+  if (!stdout) return null;
+  try {
+    return JSON.parse(stdout.trim());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Send message to Claude via C4
+ * @param {string} source - Channel name
+ * @param {string} endpoint - Endpoint ID (chat ID)
+ * @param {string} content - Message content
+ * @param {function} [onReject] - Callback with error message when c4-receive rejects
+ */
+function sendToC4(source, endpoint, content, onReject) {
   if (!content) {
     console.error('[telegram] sendToC4 called with empty content');
     return;
   }
   const safeContent = content.replace(/'/g, "'\\''");
 
-  const cmd = `node "${C4_RECEIVE}" --channel "${source}" --endpoint "${endpoint}" --content '${safeContent}'`;
+  const cmd = `node "${C4_RECEIVE}" --channel "${source}" --endpoint "${endpoint}" --json --content '${safeContent}'`;
 
-  exec(cmd, (error) => {
+  exec(cmd, { encoding: 'utf8' }, (error, stdout) => {
     if (!error) {
       console.log(`[telegram] Sent to C4: ${content.substring(0, 50)}...`);
       return;
     }
+    // Non-zero exit — check if c4-receive returned a structured rejection
+    const response = parseC4Response(error.stdout || stdout);
+    if (response && response.ok === false && response.error?.message) {
+      console.warn(`[telegram] C4 rejected (${response.error.code}): ${response.error.message}`);
+      if (onReject) onReject(response.error.message);
+      return;
+    }
+    // Unexpected failure (node crash, etc.) — retry once
     console.warn(`[telegram] C4 send failed, retrying in 2s: ${error.message}`);
     setTimeout(() => {
-      exec(cmd, (retryError) => {
-        if (retryError) {
-          console.error(`[telegram] C4 send failed after retry: ${retryError.message}`);
-        } else {
+      exec(cmd, { encoding: 'utf8' }, (retryError, retryStdout) => {
+        if (!retryError) {
           console.log(`[telegram] Sent to C4 (retry): ${content.substring(0, 50)}...`);
+          return;
+        }
+        const retryResponse = parseC4Response(retryError.stdout || retryStdout);
+        if (retryResponse && retryResponse.ok === false && retryResponse.error?.message) {
+          console.error(`[telegram] C4 rejected after retry (${retryResponse.error.code}): ${retryResponse.error.message}`);
+          if (onReject) onReject(retryResponse.error.message);
+        } else {
+          console.error(`[telegram] C4 send failed after retry: ${retryError.message}`);
         }
       });
     }, 2000);
@@ -230,7 +261,9 @@ bot.on('text', (ctx) => {
 
     // Send to C4
     const message = formatMessage(ctx, ctx.message.text);
-    sendToC4('telegram', String(chatId), message);
+    sendToC4('telegram', String(chatId), message, (errMsg) => {
+      bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+    });
     return;
   }
 
@@ -250,7 +283,9 @@ bot.on('text', (ctx) => {
     // Smart groups receive all messages
     if (isSmartGrp) {
       const message = formatMessage(ctx, ctx.message.text);
-      sendToC4('telegram', String(chatId), message);
+      sendToC4('telegram', String(chatId), message, (errMsg) => {
+        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+      });
       return;
     }
 
@@ -261,7 +296,9 @@ bot.on('text', (ctx) => {
       updateCursor(chatId, ctx.message.message_id);
       const cleanText = ctx.message.text.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim();
       const message = formatMessage(ctx, cleanText || ctx.message.text, null, contextPrefix);
-      sendToC4('telegram', String(chatId), message);
+      sendToC4('telegram', String(chatId), message, (errMsg) => {
+        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+      });
       return;
     }
 
@@ -276,7 +313,9 @@ bot.on('text', (ctx) => {
       updateCursor(chatId, ctx.message.message_id);
       const cleanText = ctx.message.text.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim();
       const message = formatMessage(ctx, cleanText || ctx.message.text, null, contextPrefix);
-      sendToC4('telegram', String(chatId), message);
+      sendToC4('telegram', String(chatId), message, (errMsg) => {
+        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+      });
       return;
     }
 
@@ -310,7 +349,9 @@ bot.on('photo', async (ctx) => {
       const localPath = await downloadPhoto(ctx);
       const caption = ctx.message.caption || '[sent a photo]';
       const message = formatMessage(ctx, caption, localPath);
-      sendToC4('telegram', String(chatId), message);
+      sendToC4('telegram', String(chatId), message, (errMsg) => {
+        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+      });
       ctx.reply('Photo received!');
     } catch (err) {
       console.error(`[telegram] Photo download error: ${err.message}`);
@@ -338,7 +379,9 @@ bot.on('photo', async (ctx) => {
     try {
       const localPath = await downloadPhoto(ctx);
       const message = formatMessage(ctx, caption || '[sent a photo]', localPath);
-      sendToC4('telegram', String(chatId), message);
+      sendToC4('telegram', String(chatId), message, (errMsg) => {
+        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+      });
     } catch (err) {
       console.error(`[telegram] Photo download error: ${err.message}`);
     }
@@ -372,7 +415,9 @@ bot.on('document', async (ctx) => {
       const localPath = await downloadDocument(ctx);
       const caption = ctx.message.caption || `[sent a file: ${ctx.message.document.file_name}]`;
       const message = formatMessage(ctx, caption, localPath);
-      sendToC4('telegram', String(chatId), message);
+      sendToC4('telegram', String(chatId), message, (errMsg) => {
+        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+      });
       ctx.reply('File received!');
     } catch (err) {
       console.error(`[telegram] Document download error: ${err.message}`);
@@ -399,7 +444,9 @@ bot.on('document', async (ctx) => {
     try {
       const localPath = await downloadDocument(ctx);
       const message = formatMessage(ctx, caption || `[sent a file: ${doc.file_name}]`, localPath);
-      sendToC4('telegram', String(chatId), message);
+      sendToC4('telegram', String(chatId), message, (errMsg) => {
+        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+      });
     } catch (err) {
       console.error(`[telegram] Document download error: ${err.message}`);
     }
