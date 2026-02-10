@@ -536,7 +536,7 @@ zylos uninstall telegram [--purge]
 
 - [Telegraf 文档](https://telegraf.js.org/)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
-- [zylos0-components-design.md](https://zylos10.jinglever.com/zylos0-components-design.md)
+- [Zylos Component Ecosystem Design](https://github.com/zylos-ai/zylos-core/blob/main/docs/components-design.md)
 
 ---
 
