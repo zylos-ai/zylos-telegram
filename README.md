@@ -1,6 +1,6 @@
 # zylos-telegram
 
-[![Version](https://img.shields.io/badge/version-0.1.0--beta.16-blue.svg)](https://github.com/zylos-ai/zylos-telegram/releases)
+[![Version](https://img.shields.io/badge/version-0.1.0--beta.22-blue.svg)](https://github.com/zylos-ai/zylos-telegram/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 Telegram Bot component for [Zylos Agent](https://github.com/zylos-ai/zylos-core), enabling bidirectional messaging between users and Claude via Telegram.

@@ -1,90 +1,90 @@
-# zylos-telegram 详细设计文档
+# zylos-telegram Design Document
 
-**版本**: v2.0
-**日期**: 2026-02-04
-**作者**: Zylos Team
-**仓库**: https://github.com/zylos-ai/zylos-telegram
-**状态**: 已实现
-
----
-
-## 一、概述
-
-### 1.1 组件定位
-
-zylos-telegram 是 Zylos0 的核心通讯组件，负责通过 Telegram Bot API 实现用户与 Claude Agent 的双向消息交互。
-
-| 属性 | 值 |
-|------|-----|
-| 类型 | 通讯组件 (Communication) |
-| 优先级 | P0 |
-| 依赖 | C4 Communication Bridge |
-| 基础代码 | zylos-infra/telegram-bot (~80% 复用) |
-
-### 1.2 核心功能
-
-| 功能 | 说明 | 优先级 |
-|------|------|--------|
-| 私聊消息接收 | 接收授权用户的私聊消息 | P0 |
-| 消息发送 | 通过 C4 发送消息到指定用户 | P0 |
-| Owner 自动绑定 | 首个用户自动成为管理员 | P0 |
-| 用户白名单 | 限制只有授权用户可使用 | P0 |
-| 群聊 @mention | 接收群聊中 @bot 的消息 | P1 |
-| Smart Groups | 接收指定群的所有消息 | P1 |
-| 图片接收 | 下载并传递图片路径给 Claude | P1 |
-| 文件接收 | 下载并传递文件路径给 Claude | P2 |
-| 长消息分段 | 自动拆分超长回复 | P1 |
-
-### 1.3 不包含的功能
-
-- 语音消息处理 (由 voice 组件负责)
-- 视频处理
-- 内联查询 (Inline Query)
-- 支付功能
+**Version**: v2.0
+**Date**: 2026-02-04
+**Author**: Zylos Team
+**Repository**: https://github.com/zylos-ai/zylos-telegram
+**Status**: Implemented
 
 ---
 
-## 二、目录结构
+## 1. Overview
 
-### 2.1 Skills 目录 (代码)
+### 1.1 Component Overview
+
+zylos-telegram is a core communication component of Zylos0, responsible for enabling two-way messaging between users and the Claude Agent via the Telegram Bot API.
+
+| Property | Value |
+|----------|-------|
+| Type | Communication |
+| Priority | P0 |
+| Dependency | C4 Communication Bridge |
+| Code Base | zylos-infra/telegram-bot (~80% reused) |
+
+### 1.2 Core Features
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| Private message receiving | Receive private messages from authorized users | P0 |
+| Message sending | Send messages to a specified user via C4 | P0 |
+| Owner auto-binding | First user is automatically bound as admin | P0 |
+| User whitelist | Restrict usage to authorized users only | P0 |
+| Group @mention | Receive messages mentioning @bot in group chats | P1 |
+| Smart Groups | Receive all messages from designated groups | P1 |
+| Image receiving | Download images and pass file paths to Claude | P1 |
+| File receiving | Download files and pass file paths to Claude | P2 |
+| Long message splitting | Automatically split oversized replies into segments | P1 |
+
+### 1.3 Out of Scope
+
+- Voice message handling (handled by the voice component)
+- Video processing
+- Inline Query
+- Payment functionality
+
+---
+
+## 2. Directory Structure
+
+### 2.1 Skills Directory (Code)
 
 ```
 ~/zylos/.claude/skills/telegram/
-├── SKILL.md              # 组件元数据 (v2 格式，含 lifecycle)
-├── package.json          # 依赖定义
-├── ecosystem.config.cjs  # PM2 配置
+├── SKILL.md              # Component metadata (v2 format, with lifecycle)
+├── package.json          # Dependency definitions
+├── ecosystem.config.cjs  # PM2 configuration
 ├── hooks/
-│   ├── post-install.js   # 安装后钩子 (创建目录、配置 PM2)
-│   └── post-upgrade.js   # 升级后钩子 (配置迁移)
+│   ├── post-install.js   # Post-install hook (create directories, configure PM2)
+│   └── post-upgrade.js   # Post-upgrade hook (config migration)
 ├── scripts/
-│   └── send.js           # C4 标准发送接口
+│   └── send.js           # C4 standard send interface
 └── src/
-    ├── bot.js            # 主程序入口
-    ├── admin.js          # 管理 CLI
+    ├── bot.js            # Main entry point
+    ├── admin.js          # Admin CLI
     └── lib/
-        ├── config.js     # 配置加载模块
-        ├── auth.js       # 认证模块 (Owner 绑定 + 白名单)
-        ├── context.js    # 群聊上下文管理
-        └── media.js      # 媒体处理模块
+        ├── config.js     # Configuration loader
+        ├── auth.js       # Authentication (owner binding + whitelist)
+        ├── context.js    # Group chat context management
+        └── media.js      # Media handling module
 ```
 
-> **注意**: v2 格式使用 `hooks/` 目录替代了原来的 `install.js`、`upgrade.js`、`uninstall.js`。
-> 标准安装/卸载操作由 zylos CLI 处理，hooks 仅处理组件特定逻辑。
+> **Note**: The v2 format uses a `hooks/` directory, replacing the previous `install.js`, `upgrade.js`, and `uninstall.js`.
+> Standard install/uninstall operations are handled by the zylos CLI; hooks only handle component-specific logic.
 
-### 2.2 Data 目录 (数据)
+### 2.2 Data Directory
 
 ```
 ~/zylos/components/telegram/
-├── config.json           # 运行时配置
-├── media/                # 媒体文件存储 (图片、文件等)
-└── logs/                 # 日志目录 (PM2 管理)
+├── config.json           # Runtime configuration
+├── media/                # Media file storage (images, files, etc.)
+└── logs/                 # Log directory (managed by PM2)
 ```
 
 ---
 
-## 三、架构设计
+## 3. Architecture
 
-### 3.1 组件架构图
+### 3.1 Component Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -93,13 +93,13 @@ zylos-telegram 是 Zylos0 的核心通讯组件，负责通过 Telegram Bot API 
 │                                                          │
 │  ┌──────────────┐    ┌──────────────┐                   │
 │  │   bot.js     │───▶│   auth.js    │                   │
-│  │  (Telegraf)  │    │ Owner+白名单  │                   │
+│  │  (Telegraf)  │    │Owner+Whitelist│                   │
 │  └──────┬───────┘    └──────────────┘                   │
 │         │                                                │
-│         │ 消息接收                                       │
+│         │ Receive messages                               │
 │         ▼                                                │
 │  ┌──────────────┐                                       │
-│  │   media.js   │  下载媒体到本地                        │
+│  │   media.js   │  Download media locally                │
 │  └──────┬───────┘                                       │
 │         │                                                │
 │         ▼                                                │
@@ -108,111 +108,111 @@ zylos-telegram 是 Zylos0 的核心通讯组件，负责通过 Telegram Bot API 
 │  └──────────────────────────────────┘                   │
 │                                                          │
 │  ┌──────────────┐                                       │
-│  │   send.js    │  ← C4 调用发送消息                    │
+│  │   send.js    │  ← Called by C4 to send messages      │
 │  └──────────────┘                                       │
 │                                                          │
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 模块职责
+### 3.2 Module Responsibilities
 
-| 模块 | 文件 | 职责 |
-|------|------|------|
-| 主程序 | bot.js | Telegraf 初始化、事件监听、消息格式化、调用 c4-receive |
-| 配置 | lib/config.js | 加载 .env + config.json |
-| 认证 | lib/auth.js | Owner 绑定 + 白名单验证 |
-| 媒体 | lib/media.js | 下载图片/文件到本地 |
-| 上下文 | lib/context.js | 群聊消息日志 + @mention 上下文 |
-| 发送 | scripts/send.js | C4 标准接口，发送文本和媒体 |
+| Module | File | Responsibility |
+|--------|------|----------------|
+| Main | bot.js | Telegraf initialization, event listeners, message formatting, calling c4-receive |
+| Config | lib/config.js | Load .env + config.json |
+| Auth | lib/auth.js | Owner binding + whitelist verification |
+| Media | lib/media.js | Download images/files locally |
+| Context | lib/context.js | Group chat message log + @mention context |
+| Send | scripts/send.js | C4 standard interface for sending text and media |
 
 ---
 
-## 四、C4 集成
+## 4. C4 Integration
 
-### 4.1 接收流程 (Telegram → Claude)
+### 4.1 Receive Flow (Telegram → Claude)
 
 ```
-用户发送消息
+User sends a message
      │
      ▼
 ┌─────────────┐
-│  bot.js     │  监听 Telegram API
+│  bot.js     │  Listens to Telegram API
 └─────┬───────┘
-      │ 1. Owner 绑定 (首次用户)
-      │ 2. 白名单验证
-      │ 3. formatMessage() 格式化
-      │    "[TG DM] username said: 消息内容"
-      │    "[TG GROUP:groupname] username said: 消息内容"
+      │ 1. Owner binding (first-time user)
+      │ 2. Whitelist verification
+      │ 3. formatMessage() formats the message
+      │    "[TG DM] username said: message content"
+      │    "[TG GROUP:groupname] username said: message content"
       ▼
 ┌─────────────┐
-│ c4-receive  │  comm-bridge 接口
+│ c4-receive  │  comm-bridge interface
 └─────┬───────┘
       │ --channel telegram
       │ --endpoint <chat_id>
       │ --content "..."
       ▼
 ┌─────────────┐
-│   Claude    │  处理消息
+│   Claude    │  Processes the message
 └─────────────┘
 ```
 
-### 4.2 发送流程 (Claude → Telegram)
+### 4.2 Send Flow (Claude → Telegram)
 
 ```
-Claude 需要回复
+Claude needs to reply
       │
       ▼
 ┌─────────────┐
 │  c4-send    │  C4 Bridge
 └─────┬───────┘
-      │ c4-send telegram <chat_id> "消息内容"
+      │ c4-send telegram <chat_id> "message content"
       ▼
 ┌──────────────────────────────────────────┐
 │ ~/zylos/.claude/skills/telegram/scripts/send.js │
 └─────┬────────────────────────────────────┘
-      │ 1. 解析参数
-      │ 2. 检查媒体前缀 [MEDIA:type]
-      │ 3. 长消息自动分段
-      │ 4. 调用 Telegram API
+      │ 1. Parse arguments
+      │ 2. Check for [MEDIA:type] prefix
+      │ 3. Auto-split long messages
+      │ 4. Call Telegram API
       ▼
 ┌─────────────┐
-│ Telegram    │  用户收到消息
+│ Telegram    │  User receives the message
 └─────────────┘
 ```
 
-### 4.3 send.js 接口规范
+### 4.3 send.js Interface Specification
 
 ```bash
-# 位置: ~/zylos/.claude/skills/telegram/scripts/send.js
-# 调用: node send.js <chat_id> <message>
-# 返回: 0 成功, 非 0 失败
+# Location: ~/zylos/.claude/skills/telegram/scripts/send.js
+# Usage: node send.js <chat_id> <message>
+# Returns: 0 on success, non-zero on failure
 
-# 示例 - 纯文本
+# Example - plain text
 node send.js "8101553026" "Hello, this is a test message"
 
-# 示例 - 发送图片
+# Example - send image
 node send.js "8101553026" "[MEDIA:image]/path/to/photo.jpg"
 
-# 示例 - 发送文件
+# Example - send file
 node send.js "8101553026" "[MEDIA:file]/path/to/document.pdf"
 ```
 
-### 4.4 消息格式规范
+### 4.4 Message Format Specification
 
-**接收消息格式:**
+**Incoming message format:**
 
 ```
-# 私聊
-[TG DM] howardzhou said: 你好
+# Private chat
+[TG DM] howardzhou said: Hello
 
-# 群聊 @mention
-[TG GROUP:研发群] howardzhou said: @bot 帮我查一下
+# Group @mention
+[TG GROUP:dev-team] howardzhou said: @bot can you look this up
 
-# 带图片
-[TG DM] howardzhou said: [发了一张图片] 这是什么 ---- file: ~/zylos/components/telegram/media/photos/xxx.jpg
+# With image
+[TG DM] howardzhou said: [sent an image] What is this ---- file: ~/zylos/components/telegram/media/photos/xxx.jpg
 ```
 
-**路由信息 (由 c4-receive 追加):**
+**Routing info (appended by c4-receive):**
 
 ```
 ---- reply via: c4-send telegram "8101553026"
@@ -220,9 +220,9 @@ node send.js "8101553026" "[MEDIA:file]/path/to/document.pdf"
 
 ---
 
-## 五、配置设计
+## 5. Configuration
 
-### 5.1 config.json 结构
+### 5.1 config.json Structure
 
 ```json
 {
@@ -244,7 +244,7 @@ node send.js "8101553026" "[MEDIA:file]/path/to/document.pdf"
   "smart_groups": [
     {
       "chat_id": "-100123456789",
-      "name": "研发群"
+      "name": "dev-team"
     }
   ],
 
@@ -258,73 +258,73 @@ node send.js "8101553026" "[MEDIA:file]/path/to/document.pdf"
 }
 ```
 
-### 5.2 配置说明
+### 5.2 Configuration Reference
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| enabled | boolean | 组件启用开关 |
-| owner.chat_id | string | 管理员 chat_id (首次交互自动绑定) |
-| owner.username | string | 管理员用户名 |
-| owner.bound_at | string | 绑定时间 |
-| whitelist.chat_ids | string[] | 允许的 Telegram chat_id 列表 |
-| whitelist.usernames | string[] | 允许的 Telegram 用户名列表 |
-| allowed_groups | object[] | @mention 时响应的群组 (chat_id + name) |
-| smart_groups | object[] | 监听所有消息的群组 (chat_id + name) |
-| features.download_media | boolean | 是否下载媒体文件 |
-| message.context_messages | number | 群聊 @mention 时附带的最近消息数 (默认 10) |
+| Field | Type | Description |
+|-------|------|-------------|
+| enabled | boolean | Component enable/disable switch |
+| owner.chat_id | string | Admin chat_id (auto-bound on first interaction) |
+| owner.username | string | Admin username |
+| owner.bound_at | string | Binding timestamp |
+| whitelist.chat_ids | string[] | List of allowed Telegram chat_ids |
+| whitelist.usernames | string[] | List of allowed Telegram usernames |
+| allowed_groups | object[] | Groups that respond to @mentions (chat_id + name) |
+| smart_groups | object[] | Groups where all messages are monitored (chat_id + name) |
+| features.download_media | boolean | Whether to download media files |
+| message.context_messages | number | Number of recent messages included with group @mentions (default: 10) |
 
-### 5.3 环境变量 (~/zylos/.env)
+### 5.3 Environment Variables (~/zylos/.env)
 
 ```bash
-# Telegram Bot Token (必须)
+# Telegram Bot Token (required)
 TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
 
-# 代理地址 (可选，中国大陆需要)
-TELEGRAM_PROXY_URL=http://192.168.3.9:7890
+# Proxy URL (optional, required in mainland China)
+TELEGRAM_PROXY_URL=http://your-proxy-host:port
 ```
 
-**说明:** 密钥和代理统一在 .env 中配置，不在 config.json 中重复。
+**Note:** Secrets and proxy settings are configured in .env only, not duplicated in config.json.
 
 ---
 
-## 六、安全设计
+## 6. Security
 
-### 6.1 Owner 自动绑定
+### 6.1 Owner Auto-Binding
 
-**设计原则**: 第一个与 Bot 交互的用户自动成为 Owner (管理员)
+**Design principle**: The first user to interact with the bot is automatically bound as the Owner (admin).
 
 ```
-用户发送 /start
+User sends /start
       │
       ▼
 ┌─────────────────┐
-│ 检查 owner      │
-│ 是否为空?       │
+│ Check owner     │
+│ Is it empty?    │
 └────────┬────────┘
          │
     ┌────┴────┐
     │         │
-   空        非空
+  Empty    Not empty
     │         │
     ▼         ▼
-绑定为 owner   走普通验证流程
-保存 config
-回复 "您已成为管理员"
+Bind as owner  Proceed with normal auth flow
+Save config
+Reply "You are now the admin"
 ```
 
-**绑定时记录**:
-- chat_id (Telegram API 自动获取，唯一)
-- username (如有)
-- bound_at (绑定时间)
+**Recorded on binding**:
+- chat_id (automatically obtained from Telegram API, unique)
+- username (if available)
+- bound_at (binding timestamp)
 
-### 6.2 用户验证流程
+### 6.2 User Authentication Flow
 
 ```
-用户发送消息
+User sends a message
       │
       ▼
 ┌─────────────────┐
-│ 是 owner?       │
+│ Is owner?       │
 └────────┬────────┘
          │
     ┌────┴────┐
@@ -332,8 +332,8 @@ TELEGRAM_PROXY_URL=http://192.168.3.9:7890
    Yes       No
     │         │
     ▼         ▼
-  放行    ┌─────────────────┐
-         │ 在白名单中?      │
+  Allow   ┌─────────────────┐
+         │ On whitelist?    │
          └────────┬────────┘
                   │
              ┌────┴────┐
@@ -341,68 +341,68 @@ TELEGRAM_PROXY_URL=http://192.168.3.9:7890
             Yes       No
              │         │
              ▼         ▼
-           放行      拒绝
+           Allow     Reject
                    "Bot is private"
 ```
 
-### 6.3 Owner 权限
+### 6.3 Owner Privileges
 
-Owner 拥有特殊权限:
-- 添加/移除白名单用户 (通过命令)
-- 查看 Bot 状态
-- 未来可扩展更多管理功能
+The Owner has special privileges:
+- Add/remove whitelist users (via commands)
+- View bot status
+- Extensible with more admin features in the future
 
-### 6.4 安全日志
+### 6.4 Security Logging
 
-所有未授权访问通过 console 记录，日志由 PM2 管理。
+All unauthorized access attempts are logged via console, with logs managed by PM2.
 
 ---
 
-## 七、媒体处理
+## 7. Media Handling
 
-### 7.1 接收流程
+### 7.1 Receive Flow
 
 ```
-用户发送图片/文件
+User sends an image/file
       │
       ▼
 ┌─────────────┐
-│  bot.js     │  监听 photo/document 事件
+│  bot.js     │  Listens for photo/document events
 └─────┬───────┘
       │
       ▼
 ┌─────────────┐
-│  media.js   │  1. 获取 file_id
-└─────┬───────┘  2. 调用 Telegram API 获取 file_path
-      │          3. 下载到 ~/zylos/components/telegram/media/
-      │          4. 文件名: {type}-{timestamp}.{ext}
+│  media.js   │  1. Get file_id
+└─────┬───────┘  2. Call Telegram API to get file_path
+      │          3. Download to ~/zylos/components/telegram/media/
+      │          4. Filename: {type}-{timestamp}.{ext}
       ▼
-返回本地路径，组装到消息中传给 c4-receive
+Return local path, assemble into message and pass to c4-receive
 ```
 
-### 7.2 发送流程
+### 7.2 Send Flow
 
 ```bash
-# send.js 解析 [MEDIA:type] 前缀
+# send.js parses the [MEDIA:type] prefix
 
-# 图片
+# Image
 node send.js "12345" "[MEDIA:image]/path/to/photo.jpg"
-# → 调用 sendPhoto API
+# → Calls sendPhoto API
 
-# 文件
+# File
 node send.js "12345" "[MEDIA:file]/path/to/doc.pdf"
-# → 调用 sendDocument API
+# → Calls sendDocument API
 
-# 纯文本
+# Plain text
 node send.js "12345" "Hello world"
-# → 调用 sendMessage API
+# → Calls sendMessage API
 ```
 
 ---
 
-## 八、服务管理
+## 8. Service Management
 
-### 8.1 PM2 配置
+### 8.1 PM2 Configuration
 
 ```javascript
 // ecosystem.config.cjs (CJS format for PM2 compatibility)
@@ -420,107 +420,107 @@ module.exports = {
   }]
 };
 
-// 注意: .env 由 bot.js 中的 dotenv 加载，路径: ~/zylos/.env
+// Note: .env is loaded by dotenv in bot.js, path: ~/zylos/.env
 ```
 
-### 8.2 服务命令
+### 8.2 Service Commands
 
 ```bash
-# 启动
+# Start
 pm2 start ~/zylos/.claude/skills/telegram/ecosystem.config.cjs
 
-# 停止
+# Stop
 pm2 stop zylos-telegram
 
-# 重启
+# Restart
 pm2 restart zylos-telegram
 
-# 查看日志
+# View logs
 pm2 logs zylos-telegram
 ```
 
 ---
 
-## 九、生命周期管理 (v2 Hooks)
+## 9. Lifecycle Management (v2 Hooks)
 
-v2 格式使用 `SKILL.md` 中的 `lifecycle` 配置和 `hooks/` 目录，替代了原来的独立脚本。
+The v2 format uses a `lifecycle` configuration in `SKILL.md` and a `hooks/` directory, replacing the previous standalone scripts.
 
-### 9.1 SKILL.md lifecycle 配置
+### 9.1 SKILL.md Lifecycle Configuration
 
 ```yaml
 lifecycle:
-  npm: true                          # zylos CLI 执行 npm install
+  npm: true                          # zylos CLI runs npm install
   service:
-    name: zylos-telegram             # PM2 服务名
-    entry: src/bot.js                # 入口文件
-  data_dir: ~/zylos/components/telegram  # 数据目录
+    name: zylos-telegram             # PM2 service name
+    entry: src/bot.js                # Entry file
+  data_dir: ~/zylos/components/telegram  # Data directory
   hooks:
-    post-install: hooks/post-install.js  # 安装后钩子
-    post-upgrade: hooks/post-upgrade.js  # 升级后钩子
+    post-install: hooks/post-install.js  # Post-install hook
+    post-upgrade: hooks/post-upgrade.js  # Post-upgrade hook
 ```
 
 ### 9.2 hooks/post-install.js
 
-安装后钩子，处理组件特定设置：
+Post-install hook that handles component-specific setup:
 
-- 创建子目录 (media/, logs/)
-- 生成默认 config.json
-- 检查环境变量
-- 用 ecosystem.config.cjs 配置 PM2
+- Create subdirectories (media/, logs/)
+- Generate default config.json
+- Check environment variables
+- Configure PM2 with ecosystem.config.cjs
 
 ### 9.3 hooks/post-upgrade.js
 
-升级后钩子，处理配置迁移：
+Post-upgrade hook that handles configuration migration:
 
-- 检查并添加新配置字段
-- 迁移旧配置格式
-- 保持向后兼容
+- Check for and add new config fields
+- Migrate legacy config formats
+- Maintain backward compatibility
 
-### 9.4 安装/卸载流程
+### 9.4 Install/Uninstall Flow
 
-标准操作由 `zylos CLI` 处理：
+Standard operations are handled by the `zylos CLI`:
 
 ```bash
-# 安装
+# Install
 zylos install telegram
-# 1. git clone 到 ~/zylos/.claude/skills/telegram
+# 1. git clone to ~/zylos/.claude/skills/telegram
 # 2. npm install
-# 3. 创建 data_dir
-# 4. PM2 注册服务
-# 5. 执行 post-install hook
+# 3. Create data_dir
+# 4. Register PM2 service
+# 5. Run post-install hook
 
-# 升级
+# Upgrade
 zylos upgrade telegram
 # 1. git pull
 # 2. npm install
-# 3. 执行 post-upgrade hook
-# 4. PM2 重启服务
+# 3. Run post-upgrade hook
+# 4. Restart PM2 service
 
-# 卸载
+# Uninstall
 zylos uninstall telegram [--purge]
-# 1. PM2 删除服务
-# 2. 删除 skill 目录
-# 3. --purge: 删除数据目录
+# 1. Remove PM2 service
+# 2. Delete skill directory
+# 3. --purge: Delete data directory
 ```
 
 ---
 
-## 十、验收标准
+## 10. Acceptance Criteria
 
-- [x] `zylos install telegram` 可在全新环境完成安装
-- [x] `node send.js <chat_id> <message>` 正确发送消息
-- [x] 私聊消息正确传递到 c4-receive
-- [x] 图片下载并传递路径
-- [x] Owner 自动绑定流程正常
-- [x] Owner 可在任意群 @bot 触发响应
-- [x] `zylos upgrade telegram` 保留用户配置并执行迁移
-- [x] `zylos uninstall telegram` 正确清理
+- [x] `zylos install telegram` completes installation on a fresh environment
+- [x] `node send.js <chat_id> <message>` sends messages correctly
+- [x] Private messages are correctly delivered to c4-receive
+- [x] Images are downloaded and their paths are passed through
+- [x] Owner auto-binding flow works correctly
+- [x] Owner can @bot in any group to trigger a response
+- [x] `zylos upgrade telegram` preserves user config and performs migration
+- [x] `zylos uninstall telegram` cleans up correctly
 
 ---
 
-## 附录
+## Appendix
 
-### A. 依赖列表
+### A. Dependency List
 
 ```json
 {
@@ -532,12 +532,12 @@ zylos uninstall telegram [--purge]
 }
 ```
 
-### B. 参考资料
+### B. References
 
-- [Telegraf 文档](https://telegraf.js.org/)
+- [Telegraf Documentation](https://telegraf.js.org/)
 - [Telegram Bot API](https://core.telegram.org/bots/api)
-- [zylos0-components-design.md](https://zylos10.jinglever.com/zylos0-components-design.md)
+- [Zylos Component Ecosystem Design](https://github.com/zylos-ai/zylos-core/blob/main/docs/components-design.md)
 
 ---
 
-*文档结束*
+*End of document*
