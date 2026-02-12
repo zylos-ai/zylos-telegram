@@ -9,7 +9,10 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
-import 'dotenv/config';
+import dotenv from 'dotenv';
+
+// Load .env from ~/zylos/.env (not cwd which may be comm-bridge directory)
+dotenv.config({ path: path.join(process.env.HOME, 'zylos/.env') });
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const PROXY_URL = process.env.TELEGRAM_PROXY_URL;
