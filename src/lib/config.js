@@ -18,6 +18,7 @@ export const DEFAULT_CONFIG = {
   enabled: true,
   owner: { chat_id: null, username: null, bound_at: null },
   whitelist: { chat_ids: [], usernames: [] },
+  group_whitelist: { enabled: true },
   allowed_groups: [],
   smart_groups: [],
   features: {

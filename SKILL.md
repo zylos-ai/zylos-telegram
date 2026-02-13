@@ -118,6 +118,10 @@ node ~/zylos/.claude/skills/telegram/src/admin.js list-smart-groups
 node ~/zylos/.claude/skills/telegram/src/admin.js add-smart-group <chat_id> <name>
 node ~/zylos/.claude/skills/telegram/src/admin.js remove-smart-group <chat_id>
 
+# Group Whitelist (enabled by default)
+node ~/zylos/.claude/skills/telegram/src/admin.js enable-group-whitelist
+node ~/zylos/.claude/skills/telegram/src/admin.js disable-group-whitelist
+
 # Whitelist
 node ~/zylos/.claude/skills/telegram/src/admin.js list-whitelist
 node ~/zylos/.claude/skills/telegram/src/admin.js add-whitelist chat_id <id>
