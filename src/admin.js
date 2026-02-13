@@ -252,6 +252,8 @@ Commands:
   help                                Show this help
 
 Note: Owner can always @mention bot in any group regardless of whitelist.
+      When owner adds bot to a group, it's auto-approved.
+      When others add bot, owner must manually approve.
 
 After changes, restart bot: pm2 restart zylos-telegram
 `);
