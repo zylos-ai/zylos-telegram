@@ -102,12 +102,15 @@ export function removeFromWhitelist(config, chatId) {
 
 /**
  * Check if group is in allowed_groups (can respond to @mentions)
- * When allowed_groups is empty or not set, all groups are allowed (open mode).
- * When allowed_groups has entries, only listed groups are allowed (restricted mode).
+ * When group_whitelist.enabled is true (default): only listed groups are allowed.
+ * When group_whitelist.enabled is false: all groups are allowed (open mode).
+ * Note: Owner is always allowed regardless — checked separately in bot.js.
  */
 export function isAllowedGroup(config, chatId) {
   chatId = String(chatId);
-  if (!config.allowed_groups || config.allowed_groups.length === 0) return true;
+  const whitelistEnabled = config.group_whitelist?.enabled !== false;
+  if (!whitelistEnabled) return true;
+  if (!config.allowed_groups || config.allowed_groups.length === 0) return false;
   return config.allowed_groups.some(g => String(g.chat_id) === chatId);
 }
 
