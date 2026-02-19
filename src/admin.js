@@ -32,7 +32,7 @@ const commands = {
       const allowFrom = Array.isArray(group.allowFrom) && group.allowFrom.length > 0
         ? group.allowFrom.join(', ')
         : '*';
-      const historyLimit = group.historyLimit || config.message?.context_messages || 10;
+      const historyLimit = group.historyLimit || config.message?.context_messages || 5;
       console.log(`  ${chatId} - ${group.name || 'group'}`);
       console.log(`    mode: ${group.mode || 'mention'}`);
       console.log(`    allowFrom: ${allowFrom}`);

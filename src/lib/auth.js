@@ -191,7 +191,7 @@ export function addGroup(config, chatId, name, mode = 'mention') {
     name,
     mode,
     allowFrom: ['*'],
-    historyLimit: config.message?.context_messages || 10,
+    historyLimit: config.message?.context_messages || 5,
     added_at: new Date().toISOString()
   };
 

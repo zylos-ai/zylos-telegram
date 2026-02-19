@@ -99,11 +99,11 @@ if (fs.existsSync(configPath)) {
 
     // Migration 7: Ensure message object with context_messages
     if (!config.message) {
-      config.message = { context_messages: 10 };
+      config.message = { context_messages: 5 };
       migrated = true;
       migrations.push('Added message.context_messages');
     } else if (config.message.context_messages === undefined) {
-      config.message.context_messages = 10;
+      config.message.context_messages = 5;
       migrated = true;
       migrations.push('Added message.context_messages');
     }
@@ -118,7 +118,7 @@ if (fs.existsSync(configPath)) {
           name: g.name,
           mode: 'mention',
           allowFrom: ['*'],
-          historyLimit: config.message?.context_messages || 10,
+          historyLimit: config.message?.context_messages || 5,
           added_at: g.added_at || new Date().toISOString()
         };
       }
@@ -127,7 +127,7 @@ if (fs.existsSync(configPath)) {
           name: g.name,
           mode: 'smart',
           allowFrom: ['*'],
-          historyLimit: config.message?.context_messages || 10,
+          historyLimit: config.message?.context_messages || 5,
           added_at: g.added_at || new Date().toISOString()
         };
       }

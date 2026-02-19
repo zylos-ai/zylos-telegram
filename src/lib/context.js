@@ -42,7 +42,7 @@ function getHistoryLimit(historyKey) {
   // historyKey is either "chatId" or "chatId:threadId" - extract chatId
   const chatId = historyKey.includes(':') ? historyKey.split(':')[0] : historyKey;
   const groupConfig = config.groups?.[chatId];
-  return groupConfig?.historyLimit || config.message?.context_messages || 10;
+  return groupConfig?.historyLimit || config.message?.context_messages || 5;
 }
 
 /**
@@ -111,7 +111,7 @@ export function ensureReplay(chatId) {
   const config = loadConfig();
   // Use per-group limit if available, otherwise global default
   const groupLimit = config.groups?.[chatId]?.historyLimit;
-  const globalLimit = config.message?.context_messages || 10;
+  const globalLimit = config.message?.context_messages || 5;
   const limit = Math.max(groupLimit || 0, globalLimit);
   // Read extra lines to account for thread distribution
   const readLimit = limit * 3;
