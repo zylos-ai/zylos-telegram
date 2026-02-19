@@ -466,7 +466,7 @@ bot.on('text', (ctx) => {
   // === GROUP / SUPERGROUP CHAT ===
   if (chatType === 'group' || chatType === 'supergroup') {
     const isAllowed = isGroupAllowed(config, chatId);
-    const isSmart = isSmartGroup(config, chatId);
+    const isSmart = isSmartGroup(config, chatId, threadId);
     const mentioned = isBotMentioned(ctx);
     const senderIsOwner = isOwner(config, ctx);
 
@@ -593,7 +593,7 @@ bot.on('photo', async (ctx) => {
 
   // Group chat
   const isAllowed = isGroupAllowed(config, chatId);
-  const isSmart = isSmartGroup(config, chatId);
+  const isSmart = isSmartGroup(config, chatId, threadId);
   if (!isAllowed && !isSmart) return;
 
   // Replay log history before recording new entry to preserve chronological order
@@ -740,7 +740,7 @@ bot.on('document', async (ctx) => {
 
   // Group chat
   const isAllowed = isGroupAllowed(config, chatId);
-  const isSmart = isSmartGroup(config, chatId);
+  const isSmart = isSmartGroup(config, chatId, threadId);
   if (!isAllowed && !isSmart) return;
 
   // Replay log history before recording new entry to preserve chronological order

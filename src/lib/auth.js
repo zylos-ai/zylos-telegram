@@ -132,17 +132,24 @@ export function isGroupAllowed(config, chatId) {
 }
 
 /**
- * Check if a group is in "smart" mode (receive all messages).
+ * Check if a group (or specific thread) is in "smart" mode.
+ * Thread-level mode overrides group-level mode.
  * @param {object} config
  * @param {string|number} chatId
+ * @param {string|number|null} threadId - Optional thread ID for forum topics
  * @returns {boolean}
  */
-export function isSmartGroup(config, chatId) {
+export function isSmartGroup(config, chatId, threadId = null) {
   chatId = String(chatId);
   const policy = config.groupPolicy || 'allowlist';
   if (policy === 'disabled') return false;
   const gc = config.groups?.[chatId];
-  return gc?.mode === 'smart';
+  if (!gc) return false;
+  // Check thread-level override first
+  if (threadId && gc.threads?.[String(threadId)]?.mode) {
+    return gc.threads[String(threadId)].mode === 'smart';
+  }
+  return gc.mode === 'smart';
 }
 
 /**
