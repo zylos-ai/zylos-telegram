@@ -5,7 +5,7 @@
 
 import { Telegraf } from 'telegraf';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { exec, execFileSync } from 'child_process';
+import { exec, execFile } from 'child_process';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -311,12 +311,16 @@ function notifyOwnerPendingGroup(chatId, chatTitle, addedBy) {
   const message = `[System] Bot was added to a group, pending approval:\nGroup: ${chatTitle}\nID: ${chatId}\nAdded by: ${addedBy}\n\nTo approve, run:\nnode "${adminPath}" add-group "${chatId}" "${chatTitle}" mention`;
 
   const sendPath = path.join(__dirname, '..', 'scripts', 'send.js');
-  try {
-    execFileSync('node', [sendPath, config.owner.chat_id, message], { encoding: 'utf8' });
-    console.log(`[telegram] Notified owner about pending group: ${chatTitle}`);
-  } catch (err) {
-    console.error(`[telegram] Failed to notify owner: ${err.message}`);
-  }
+  // Use async execFile to avoid deadlock: send.js calls recordOutgoing()
+  // which POSTs back to this process's internal HTTP server.
+  // execFileSync would block the event loop, preventing the response.
+  execFile('node', [sendPath, config.owner.chat_id, message], { encoding: 'utf8' }, (err) => {
+    if (err) {
+      console.error(`[telegram] Failed to notify owner: ${err.message}`);
+    } else {
+      console.log(`[telegram] Notified owner about pending group: ${chatTitle}`);
+    }
+  });
 }
 
 /**
@@ -574,7 +578,7 @@ bot.on('photo', async (ctx) => {
   // Smart groups: download immediately
   if (isSmart) {
     if (!config.features.download_media) return;
-    if (!isSenderAllowed(config, chatId, ctx.from.id)) {
+    if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) {
       console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (photo)`);
       return;
     }
@@ -696,7 +700,7 @@ bot.on('document', async (ctx) => {
   // Smart groups: download immediately
   if (isSmart) {
     if (!config.features.download_media) return;
-    if (!isSenderAllowed(config, chatId, ctx.from.id)) {
+    if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) {
       console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (document)`);
       return;
     }
