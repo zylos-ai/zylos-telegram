@@ -41,7 +41,7 @@ export function bindOwner(config, ctx) {
  */
 export function isOwner(config, ctx) {
   if (!hasOwner(config)) return false;
-  return String(ctx.chat.id) === String(config.owner.chat_id);
+  return String(ctx.from.id) === String(config.owner.chat_id);
 }
 
 /**

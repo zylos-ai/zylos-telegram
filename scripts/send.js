@@ -12,7 +12,7 @@ import crypto from 'crypto';
 import { execSync } from 'child_process';
 import dotenv from 'dotenv';
 import { parseEndpoint } from '../src/lib/utils.js';
-import { DATA_DIR } from '../src/lib/config.js';
+import { DATA_DIR, loadConfig } from '../src/lib/config.js';
 
 // Load .env from ~/zylos/.env (not cwd which may be comm-bridge directory)
 dotenv.config({ path: path.join(process.env.HOME, 'zylos/.env') });
@@ -270,7 +270,8 @@ function markTypingDone() {
 }
 
 async function recordOutgoing(text) {
-  const port = 3460; // Must match config.internal_port
+  const cfg = loadConfig();
+  const port = cfg.internal_port || 3460;
   try {
     const body = JSON.stringify({
       chatId,

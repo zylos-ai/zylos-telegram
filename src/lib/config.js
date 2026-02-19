@@ -22,10 +22,6 @@ export const DEFAULT_CONFIG = {
   // New v0.2.0 group policy (replaces allowed_groups/smart_groups after migration)
   groupPolicy: 'allowlist',   // 'disabled' | 'allowlist' | 'open'
   groups: {},                 // { [chatId]: { name, mode, allowFrom, historyLimit, added_at } }
-  // Legacy fields kept for migration compatibility
-  group_whitelist: { enabled: true },
-  allowed_groups: [],
-  smart_groups: [],
   features: {
     download_media: true
   },

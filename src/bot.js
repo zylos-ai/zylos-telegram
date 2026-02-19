@@ -421,7 +421,7 @@ bot.on('text', (ctx) => {
     const isAllowed = isGroupAllowed(config, chatId);
     const isSmart = isSmartGroup(config, chatId);
     const mentioned = isBotMentioned(ctx);
-    const senderIsOwner = isOwner(config, ctx) || String(ctx.from.id) === String(config.owner?.chat_id);
+    const senderIsOwner = isOwner(config, ctx);
 
     let logged = false;
     if (isAllowed || senderIsOwner) {
@@ -567,6 +567,10 @@ bot.on('photo', async (ctx) => {
   // Smart groups: download immediately
   if (isSmart) {
     if (!config.features.download_media) return;
+    if (!isSenderAllowed(config, chatId, ctx.from.id)) {
+      console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (photo)`);
+      return;
+    }
     try {
       const localPath = await downloadPhoto(ctx);
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
@@ -683,6 +687,10 @@ bot.on('document', async (ctx) => {
   // Smart groups: download immediately
   if (isSmart) {
     if (!config.features.download_media) return;
+    if (!isSenderAllowed(config, chatId, ctx.from.id)) {
+      console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (document)`);
+      return;
+    }
     try {
       const localPath = await downloadDocument(ctx);
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
@@ -740,6 +748,7 @@ const internalServer = http.createServer((req, res) => {
     });
 
     req.on('end', () => {
+      if (res.headersSent) return;
       let parsed;
       try {
         parsed = JSON.parse(body);
