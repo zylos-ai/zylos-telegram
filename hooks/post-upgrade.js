@@ -90,6 +90,18 @@ if (fs.existsSync(configPath)) {
       migrations.push('Added owner structure');
     }
 
+    // Migration 5b: Fix legacy owner.chat_id that may be a group chat ID
+    // v0.1.x bindOwner used ctx.chat.id which could be a group ID (negative).
+    // v0.2.0 uses ctx.from.id (always positive user ID). Reset invalid owner so re-binding triggers.
+    if (config.owner && config.owner.chat_id !== null) {
+      const ownerId = Number(config.owner.chat_id);
+      if (ownerId < 0) {
+        config.owner = { chat_id: null, username: null, bound_at: null };
+        migrated = true;
+        migrations.push('Reset legacy owner with group chat_id (negative ID) for re-binding');
+      }
+    }
+
     // Migration 6: Ensure enabled field
     if (config.enabled === undefined) {
       config.enabled = true;
