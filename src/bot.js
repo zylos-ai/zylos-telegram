@@ -5,7 +5,7 @@
 
 import { Telegraf } from 'telegraf';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { exec, execSync } from 'child_process';
+import { exec, execSync, execFileSync } from 'child_process';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -310,7 +310,7 @@ function notifyOwnerPendingGroup(chatId, chatTitle, addedBy) {
 
   const sendPath = path.join(__dirname, '..', 'scripts', 'send.js');
   try {
-    execSync(`node "${sendPath}" "${config.owner.chat_id}" '${message.replace(/'/g, "'\\''")}'`);
+    execFileSync('node', [sendPath, config.owner.chat_id, message], { encoding: 'utf8' });
     console.log(`[telegram] Notified owner about pending group: ${chatTitle}`);
   } catch (err) {
     console.error(`[telegram] Failed to notify owner: ${err.message}`);
@@ -444,10 +444,6 @@ bot.on('text', (ctx) => {
     if (!senderIsOwner && !isSenderAllowed(config, chatId, ctx.from.id)) {
       console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId}`);
       return;
-    }
-
-    if (!logged && !isAllowed && !isSmart && senderIsOwner) {
-      logAndRecord(chatId, logEntry);
     }
 
     const historyKey = getHistoryKey(chatId, threadId);
@@ -737,9 +733,12 @@ const internalServer = http.createServer((req, res) => {
 
     let body = '';
     let size = 0;
+    let aborted = false;
     req.on('data', chunk => {
+      if (aborted) return;
       size += chunk.length;
       if (size > MAX_BODY_SIZE) {
+        aborted = true;
         res.writeHead(413).end('body too large');
         req.destroy();
         return;

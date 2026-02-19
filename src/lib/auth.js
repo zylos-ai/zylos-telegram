@@ -16,18 +16,18 @@ export function hasOwner(config) {
  * Bind first user as owner
  */
 export function bindOwner(config, ctx) {
-  const chatId = String(ctx.chat.id);
+  const userId = String(ctx.from.id);
   const username = ctx.from.username || null;
 
   config.owner = {
-    chat_id: chatId,
+    chat_id: userId,
     username: username,
     bound_at: new Date().toISOString()
   };
 
-  // Auto-add owner to whitelist
-  if (!config.whitelist.chat_ids.includes(chatId)) {
-    config.whitelist.chat_ids.push(chatId);
+  // Auto-add owner to whitelist (in private chat, from.id === chat.id)
+  if (!config.whitelist.chat_ids.includes(userId)) {
+    config.whitelist.chat_ids.push(userId);
   }
 
   saveConfig(config);
