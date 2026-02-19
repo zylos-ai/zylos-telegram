@@ -174,8 +174,8 @@ function replaceBotMention(ctx) {
   for (const e of entities) {
     const mentioned = text.slice(e.offset + 1, e.offset + e.length);
     if (mentioned.toLowerCase() === botUsername) {
-      // Replace @handle with display name (removes the @ prefix)
-      text = text.slice(0, e.offset) + botName + text.slice(e.offset + e.length);
+      // Replace @handle with @displayName (keep the @ prefix)
+      text = text.slice(0, e.offset) + '@' + botName + text.slice(e.offset + e.length);
     }
   }
   return text.trim();
