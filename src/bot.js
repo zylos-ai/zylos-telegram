@@ -5,7 +5,7 @@
 
 import { Telegraf } from 'telegraf';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { exec, execSync, execFileSync } from 'child_process';
+import { exec, execFileSync } from 'child_process';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -66,7 +66,7 @@ const activeTypingIndicators = new Map();
 
 // User cache init
 loadUserCache();
-startPersistInterval();
+const cachePersistInterval = startPersistInterval();
 
 /**
  * Parse c4-receive JSON response from stdout.
@@ -225,8 +225,9 @@ function handleTypingDoneFile(filename) {
 }
 
 // Watch typing directory for done markers (event-driven)
+let typingWatcher = null;
 try {
-  fs.watch(TYPING_DIR, (eventType, filename) => {
+  typingWatcher = fs.watch(TYPING_DIR, (eventType, filename) => {
     if (eventType === 'rename' && filename) {
       handleTypingDoneFile(filename);
     }
@@ -236,7 +237,7 @@ try {
 }
 
 // Fallback poll every 30s (belt and suspenders for missed inotify events)
-setInterval(() => {
+const typingPollInterval = setInterval(() => {
   try {
     const files = fs.readdirSync(TYPING_DIR);
     for (const f of files) {
@@ -798,13 +799,19 @@ bot.launch().then(() => {
 });
 
 // Graceful shutdown
-process.once('SIGINT', () => {
+function cleanup() {
   persistUserCache();
-  bot.stop('SIGINT');
+  clearInterval(typingPollInterval);
+  clearInterval(cachePersistInterval);
+  if (typingWatcher) typingWatcher.close();
+  for (const [id] of activeTypingIndicators) stopTypingIndicator(id);
   internalServer.close();
+}
+process.once('SIGINT', () => {
+  cleanup();
+  bot.stop('SIGINT');
 });
 process.once('SIGTERM', () => {
-  persistUserCache();
+  cleanup();
   bot.stop('SIGTERM');
-  internalServer.close();
 });

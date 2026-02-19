@@ -31,7 +31,7 @@ export function bindOwner(config, ctx) {
   }
 
   saveConfig(config);
-  console.log(`[telegram] Owner bound: ${username || chatId}`);
+  console.log(`[telegram] Owner bound: ${username || userId}`);
 
   return true;
 }
@@ -139,6 +139,8 @@ export function isGroupAllowed(config, chatId) {
  */
 export function isSmartGroup(config, chatId) {
   chatId = String(chatId);
+  const policy = config.groupPolicy || 'allowlist';
+  if (policy === 'disabled') return false;
   const gc = config.groups?.[chatId];
   return gc?.mode === 'smart';
 }
