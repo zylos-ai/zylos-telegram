@@ -1,4 +1,4 @@
-# zylos-telegram v0.2 Upgrade Plan
+# zylos-telegram v0.2.0 Upgrade Plan
 
 > Optimization upgrade plan for zylos-telegram, informed by two key references:
 > 1. **zylos-lark v0.1.5** — battle-tested patterns already running in production
@@ -7,24 +7,71 @@
 > Philosophy: **Simplicity first.** Every change must earn its complexity. We adopt
 > proven zylos-lark patterns where they solve real problems, and reference OpenClaw
 > for UX inspiration without importing its layered architecture.
+>
+> All changes ship together in **v0.2.0** as a single coordinated release.
 
 ## Current State (v0.1.1)
 
 | Area | Implementation | Limitation |
 |------|---------------|------------|
 | Context | File-based (`logs/{chatId}.log`), reads entire file on every @mention | O(n) disk I/O per message; no sliding window |
-| User names | Raw `ctx.from.username \|\| ctx.from.first_name` | No caching; no Telegram API lookup for missing names |
+| User names | Raw `ctx.from.username \|\| ctx.from.first_name` | No caching; no persistence across restarts |
 | Processing feedback | None | User gets no indication bot is working |
 | Group policy | `allowed_groups[]` + `smart_groups[]` flat arrays | No per-group config (history limit, sender allowlist, mode) |
 | Message format | Plain text with `[Group context - ...]` prefix | No structured tags; Claude can't distinguish context types |
 | Reply-to context | Not implemented | Quoted replies lose parent message content |
 | Bot's own messages | Not tracked | Context only includes other users' messages |
-| Message chunking | Line-break split at 4000 chars | Doesn't preserve code blocks or markdown structure |
+| Message chunking | Line-break split at 4000 chars | Doesn't preserve code blocks; no rate limit handling |
 | Send script | Fire-and-forget, no reply-to support | Can't reply to specific messages in groups |
+| Mention detection | `string.includes('@botname')` | Fragile; misses partial matches, doesn't use Telegram entities |
+| Topic threads | Not handled | Messages in forum topics treated as flat group messages |
 
-## Proposed Changes
+---
 
-### P0 — In-Memory Chat History with Lazy-Load Fallback
+## Endpoint Format Specification
+
+All changes in this plan share a unified endpoint string format for C4 routing.
+
+**Format:** `chatId[|key:value]*`
+
+```
+chatId|msg:12345|req:abc123|thread:456
+```
+
+**Fields:**
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| (bare) | Yes | Telegram chat ID (first segment, before any `\|`) |
+| `msg` | No | Trigger message ID (for reply-to in send.js) |
+| `req` | No | Request correlation ID (for typing indicator cleanup) |
+| `thread` | No | Topic thread ID (for forum thread isolation) |
+
+**Parser:** Order-insensitive key-value extraction. Unknown keys are ignored
+(forward-compatible).
+
+```javascript
+function parseEndpoint(endpoint) {
+  const parts = endpoint.split('|');
+  const result = { chatId: parts[0] };
+  for (let i = 1; i < parts.length; i++) {
+    const sep = parts[i].indexOf(':');
+    if (sep > 0) {
+      result[parts[i].slice(0, sep)] = parts[i].slice(sep + 1);
+    }
+  }
+  return result;
+}
+```
+
+**Backward compatibility:** Plain `chatId` (no `|`) continues to work — all extra
+fields default to `undefined`.
+
+---
+
+## Changes
+
+### 1. In-Memory Chat History with Log-File Replay
 
 **What:** Replace file-read-per-@mention with `Map<chatId, messages[]>` in memory.
 
@@ -42,28 +89,32 @@ chatHistories: Map<chatId, Array<{timestamp, message_id, user_id, user_name, tex
   in-memory array via `recordHistoryEntry()`.
 - **Bounded size:** When `history.length > limit * 2`, trim to last `limit` entries.
   Default limit: `config.message.context_messages` (10).
-- **Lazy-load on cold start:** First @mention after restart triggers a one-time
-  Telegram `getUpdates` or cached log file read to seed the in-memory map. Track
-  loaded chats in a `Set` to avoid repeat loads.
+- **Deduplication:** Skip if `message_id` already exists in the array (prevents
+  duplicates from lazy-load + real-time overlap).
+- **Cold-start replay from log files:** On first context request for a chat after
+  restart, read the tail of `logs/{chatId}.log` (last `limit` lines) to seed the
+  in-memory map. Track loaded chats in a `_replayedChats: Set` to avoid repeat reads.
+  **Note:** `getUpdates` is NOT used — it conflicts with Telegraf's long-polling mode
+  and may return stale data. Log file replay is reliable since we already persist every
+  message to disk.
 - **File logging preserved:** Continue appending to `logs/{chatId}.log` for audit
-  trail, but never read it in the hot path.
+  trail, but never read it in the hot path (only on cold-start replay).
 - **Cursor elimination:** Replace file-based cursor tracking with simple array slicing
   from the in-memory history. The cursor concept (last-responded message_id) can be
   kept in memory as `lastResponseId: Map<chatId, messageId>`.
 
 **Files affected:** `src/lib/context.js` (rewrite), `src/bot.js` (wire up recording)
 
-**Complexity:** Medium — core data structure change, but well-proven in zylos-lark.
+**Complexity:** Medium
 
 ---
 
-### P0 — Typing Indicator
+### 2. Typing Indicator with Request-Scoped Correlation
 
-**What:** Show "bot is processing" feedback when a message is being handled.
+**What:** Show "Bot is typing..." feedback when a message is being handled.
 
 **Why:** Users currently send a message and see nothing until the reply arrives (which
-can take seconds to minutes). This is the most noticeable UX gap. Both zylos-lark
-and OpenClaw provide processing feedback.
+can take seconds to minutes). This is the most noticeable UX gap.
 
 **Design:**
 
@@ -71,33 +122,54 @@ Telegram natively supports `sendChatAction("typing")` which shows "Bot is typing
 in the chat UI. This is simpler than zylos-lark's emoji reaction approach (which was
 necessary because Lark lacks a typing indicator API).
 
-```javascript
-// On message received, before sendToC4():
-bot.telegram.sendChatAction(chatId, 'typing');
+**Request correlation:** Each typing indicator is scoped to a specific request using
+a correlation ID (`req`), preventing race conditions when multiple messages arrive
+in the same chat concurrently.
 
-// For long processing, repeat every 5s (Telegram typing expires after ~5s):
+```javascript
+// Correlation ID format: chatId:messageId (unique per request)
+const correlationId = `${chatId}:${messageId}`;
+
+// On message received, before sendToC4():
 const typingInterval = setInterval(() => {
   bot.telegram.sendChatAction(chatId, 'typing').catch(() => {});
 }, 5000);
+bot.telegram.sendChatAction(chatId, 'typing').catch(() => {});  // Immediate first
 
-// On reply sent (in send.js), clear the interval via marker file or IPC
+// Store with correlation key
+activeTypingIndicators.set(correlationId, {
+  interval: typingInterval,
+  startedAt: Date.now()
+});
+
+// Embed correlation ID in endpoint: chatId|msg:123|req:chatId:messageId
 ```
 
-**Sync between bot.js and send.js:** Use zylos-lark's file-marker pattern:
-- `bot.js` starts typing indicator, stores interval in `activeTypingIndicators` Map
-- `send.js` writes `typing/{chatId}.done` marker file after first chunk sent
-- `bot.js` polls every 2s, clears interval when marker appears
-- Auto-timeout after 120s to prevent orphaned typing indicators
+**Cleanup (three mechanisms):**
 
-**Files affected:** `src/bot.js` (add typing start/stop), `scripts/send.js` (add
-marker file write), new `typing/` directory in data dir
+1. **`fs.watch()` on typing directory:** `send.js` writes
+   `typing/{correlationId}.done` marker file after first chunk sent. `bot.js` watches
+   the directory with `fs.watch()` (event-driven, no polling overhead) and clears the
+   matching interval immediately.
 
-**Complexity:** Low-Medium — Telegram's native typing API is simpler than Lark's
-emoji reaction approach, but the cross-process sync adds some complexity.
+2. **Auto-timeout:** 120s safety net. `bot.js` periodically (every 30s) sweeps
+   `activeTypingIndicators` and clears entries older than 120s.
+
+3. **Stale marker cleanup:** On startup, delete any leftover `.done` files in
+   `typing/`.
+
+**Why `fs.watch()` over polling:** Event-driven, zero latency, no CPU cost from
+periodic timers. Falls back to 2s poll interval if `fs.watch` is unavailable
+(shouldn't happen on Linux).
+
+**Files affected:** `src/bot.js` (typing start/stop/watch), `scripts/send.js` (write
+marker file), new `typing/` directory in data dir
+
+**Complexity:** Medium
 
 ---
 
-### P1 — Structured Message Format (XML Tags)
+### 3. Structured Message Format (XML Tags)
 
 **What:** Replace plain-text context format with XML-tagged structure.
 
@@ -119,7 +191,7 @@ improves response quality.
 ```
 [TG GROUP:dev-team] alice said: <group-context>
 [bob]: hello
-[charlie]: what's up
+[charlie]: what&apos;s up
 </group-context>
 
 <replying-to>
@@ -131,23 +203,51 @@ what do you think?
 </current-message>
 ```
 
-**Additional tags for future thread support:**
-- `<thread-context>` / `<thread-root>` — when Telegram adds topic threads
+**XML Escaping Rules:**
 
-**Files affected:** `src/lib/context.js` (`formatContextPrefix` → `formatMessage`
-integration), `src/bot.js` (message formatting)
+User-generated content inside XML tags MUST be escaped to prevent tag injection:
 
-**Complexity:** Low — string formatting change, no architectural impact.
+| Character | Escape |
+|-----------|--------|
+| `<` | `&lt;` |
+| `>` | `&gt;` |
+| `&` | `&amp;` |
+| `'` | `&apos;` |
+| `"` | `&quot;` |
+
+```javascript
+function escapeXml(text) {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/'/g, '&apos;')
+    .replace(/"/g, '&quot;');
+}
+```
+
+**Application:** `escapeXml()` is applied to user message text and usernames inside
+all XML tags. Tag names and structural markup are NOT escaped (they are controlled by
+our code, not user input).
+
+**Thread-related tags (for topic support):**
+- `<thread-context>` — messages in the topic thread
+- `<thread-root>` — the root message that started the topic
+
+**Files affected:** `src/lib/context.js` (`formatContextPrefix` → unified
+`formatMessage`), `src/bot.js` (message formatting)
+
+**Complexity:** Low
 
 ---
 
-### P1 — Reply-To Context
+### 4. Reply-To Context (Incoming)
 
 **What:** When a user replies to a specific message, include the quoted message content.
 
 **Why:** Telegram's reply-to is heavily used. Currently the bot ignores
 `ctx.message.reply_to_message` entirely, losing critical context about what the user
-is responding to. zylos-lark's `<replying-to>` tag pattern handles this well.
+is responding to.
 
 **Design:**
 
@@ -168,43 +268,149 @@ No API call needed — Telegram delivers `reply_to_message` in the update payloa
 
 **Files affected:** `src/bot.js` (extract reply context), message formatting
 
-**Complexity:** Low — data is already in the Telegraf context object.
+**Complexity:** Low
 
 ---
 
-### P1 — Bot Outgoing Message Recording
+### 5. Reply-To in send.js (Outgoing Group Replies)
+
+**What:** When Claude responds to a group @mention, reply to the triggering message
+instead of sending a standalone message.
+
+**Why:** In group chats, a standalone message from the bot has no visual connection to
+the question that triggered it. Telegram's reply-to creates a clear visual thread.
+High UX impact, low implementation cost.
+
+**Design:**
+
+`bot.js` embeds `msg:messageId` in the C4 endpoint string. `send.js` parses the
+endpoint and uses `reply_to_message_id` in the Telegram API call:
+
+```javascript
+const { chatId, msg } = parseEndpoint(endpoint);
+
+// First chunk replies to trigger message; subsequent chunks send standalone
+const params = { chat_id: chatId, text: chunk };
+if (isFirstChunk && msg) {
+  params.reply_to_message_id = parseInt(msg, 10);
+}
+await apiRequest('sendMessage', params);
+```
+
+**Fallback:** If `reply_to_message_id` fails (message deleted, too old), retry without
+it. Telegram returns error 400 "Bad Request: message to reply not found" — catch and
+resend.
+
+**Files affected:** `src/bot.js` (build structured endpoint), `scripts/send.js`
+(parse endpoint, add reply_to_message_id)
+
+**Complexity:** Low
+
+---
+
+### 6. Bot Outgoing Message Recording
 
 **What:** Record the bot's own replies in the in-memory chat history.
 
 **Why:** Without this, group context only contains other users' messages. When a user
-follows up on the bot's previous reply, the bot has no memory of what it said. zylos-lark
-solves this with an internal HTTP endpoint that `send.js` calls after sending.
+follows up on the bot's previous reply, the bot has no memory of what it said.
 
-**Design:**
-
-Option A (zylos-lark pattern): `send.js` POSTs to `bot.js` via localhost HTTP endpoint.
-Option B (simpler): `send.js` writes bot response to the same `logs/{chatId}.log` file
-and the in-memory history picks it up on next lazy-load.
-
-**Recommended: Option A** — internal HTTP endpoint on `bot.js` (e.g., `/internal/record-outgoing`).
-This keeps the in-memory history immediately up-to-date without waiting for a lazy-load cycle.
+**Design:** Internal HTTP endpoint using Node's built-in `http` module (no Express).
 
 ```javascript
-// In bot.js: add express/http server (lightweight, only localhost)
-// POST /internal/record-outgoing { chatId, text }
-// Validates via X-Internal-Token header (bot token hash)
-// Calls recordHistoryEntry() to update in-memory map
+// In bot.js: add lightweight localhost HTTP server
+import http from 'http';
+
+const INTERNAL_PORT = 3460;  // Or read from config
+const internalServer = http.createServer((req, res) => {
+  if (req.method === 'POST' && req.url === '/internal/record-outgoing') {
+    // Validate X-Internal-Token header (hash of bot token)
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      const { chatId, threadId, text } = JSON.parse(body);
+      recordHistoryEntry(threadId || chatId, {
+        timestamp: new Date().toISOString(),
+        message_id: null,  // Bot's message_id not yet known
+        user_id: 'bot',
+        user_name: bot.botInfo?.username || 'bot',
+        text: text.substring(0, 500)  // Truncate to avoid bloating history
+      });
+      res.writeHead(200).end('ok');
+    });
+  } else {
+    res.writeHead(404).end();
+  }
+});
+internalServer.listen(INTERNAL_PORT, '127.0.0.1');
 ```
+
+`send.js` POSTs to this endpoint after each successful send, using the same
+`X-Internal-Token` validation pattern from zylos-lark.
 
 **Files affected:** `src/bot.js` (add internal HTTP server), `scripts/send.js` (add
 POST after successful send)
 
-**Complexity:** Medium — introduces an HTTP server in bot.js, but it's a proven pattern
-from zylos-lark and the Telegraf bot doesn't currently use one.
+**Complexity:** Medium
 
 ---
 
-### P2 — Enhanced Group Policy Model
+### 7. Mention Detection via Telegram Entities API
+
+**What:** Replace `string.includes('@botname')` with Telegram's `entities` array.
+
+**Why:** Current detection is fragile:
+- `@botname` in a code block or quoted text triggers the bot
+- Partial matches possible (e.g., `@botname_test` matches `@botname`)
+- Case sensitivity issues
+
+Telegram provides a parsed `entities` array in every message with exact mention
+positions and types.
+
+**Design:**
+
+```javascript
+function isBotMentioned(ctx) {
+  const entities = ctx.message.entities || [];
+  const botUsername = bot.botInfo?.username?.toLowerCase();
+  if (!botUsername) return false;
+
+  return entities.some(e => {
+    if (e.type === 'mention') {
+      // @username mention — extract from text
+      const mentioned = ctx.message.text.slice(e.offset + 1, e.offset + e.length);
+      return mentioned.toLowerCase() === botUsername;
+    }
+    // Also handle text_mention (for users without username who mention via search)
+    return false;
+  });
+}
+
+function stripBotMention(ctx) {
+  // Remove bot @mention from text using entity offsets (precise, not regex)
+  let text = ctx.message.text;
+  const entities = (ctx.message.entities || [])
+    .filter(e => e.type === 'mention')
+    .sort((a, b) => b.offset - a.offset);  // Reverse order to preserve offsets
+
+  for (const e of entities) {
+    const mentioned = text.slice(e.offset + 1, e.offset + e.length);
+    if (mentioned.toLowerCase() === bot.botInfo?.username?.toLowerCase()) {
+      text = text.slice(0, e.offset) + text.slice(e.offset + e.length);
+    }
+  }
+  return text.trim();
+}
+```
+
+**Files affected:** `src/bot.js` (replace `includes()` checks with entity-based
+detection)
+
+**Complexity:** Low
+
+---
+
+### 8. Enhanced Group Policy Model
 
 **What:** Upgrade from flat `allowed_groups[]` / `smart_groups[]` arrays to a unified
 per-group config map with modes, sender allowlists, and per-group history limits.
@@ -213,8 +419,6 @@ per-group config map with modes, sender allowlists, and per-group history limits
 - Set different context window sizes per group
 - Restrict which users can trigger the bot in a group
 - Configure group behavior without moving between two separate arrays
-
-zylos-lark's unified model is cleaner and more powerful.
 
 **Proposed config schema:**
 
@@ -250,35 +454,147 @@ zylos-lark's unified model is cleaner and more powerful.
 - `allowFrom`: array of user_ids or `["*"]` for all. Default: `["*"]`
 - `historyLimit`: per-group context window size. Default: global setting
 
-**Migration:** `post-upgrade.js` converts legacy arrays to the new map format.
-Legacy arrays kept as fallback for one version cycle.
+**Migration path:**
+
+`post-upgrade.js` auto-converts legacy arrays on upgrade:
+
+```javascript
+// Legacy: allowed_groups: [{chat_id, name}] + smart_groups: [{chat_id, name}]
+// New:    groups: { chatId: {name, mode, ...} }
+if (config.allowed_groups && !config.groups) {
+  config.groups = {};
+  for (const g of config.allowed_groups) {
+    config.groups[String(g.chat_id)] = {
+      name: g.name, mode: 'mention', allowFrom: ['*'],
+      historyLimit: config.message?.context_messages || 10,
+      added_at: g.added_at || new Date().toISOString()
+    };
+  }
+  for (const g of (config.smart_groups || [])) {
+    config.groups[String(g.chat_id)] = {
+      name: g.name, mode: 'smart', allowFrom: ['*'],
+      historyLimit: config.message?.context_messages || 10,
+      added_at: g.added_at || new Date().toISOString()
+    };
+  }
+  delete config.allowed_groups;
+  delete config.smart_groups;
+}
+```
+
+Legacy arrays are removed after migration (no dual-path code).
 
 **Admin CLI updates:**
 - `add-group <chat_id> <name> [mode]` — unified add command
 - `set-group-policy <open|allowlist|disabled>`
 - `set-group-allowfrom <chat_id> <user_ids...>`
 - `set-group-history-limit <chat_id> <limit>`
-- `migrate-groups` — manual migration trigger
 
 **Files affected:** `src/lib/auth.js` (rewrite group checks), `src/lib/config.js`
 (new schema), `src/admin.js` (new commands), `hooks/post-upgrade.js` (migration)
 
-**Complexity:** Medium — schema change with migration, but improves long-term
-maintainability.
+**Complexity:** Medium
 
 ---
 
-### P2 — User Name Caching
+### 9. Improved Message Chunking with Rate Limit Handling
+
+**What:** Upgrade message splitting to preserve markdown code blocks, prefer semantic
+break points, and handle Telegram 429 rate limits.
+
+**Why:** Current `splitMessage()` splits on line breaks only, which can break markdown
+code blocks (splitting in the middle of a ``` block). Also, chunked sends to the same
+chat can trigger Telegram's rate limiter, returning HTTP 429 with `retry_after`.
+
+**Chunking algorithm (from zylos-lark):**
+
+1. Never split inside a code block (track ``` open/close state)
+2. Prefer paragraph breaks (`\n\n`) over line breaks (`\n`)
+3. Prefer line breaks over word boundaries
+4. Ensure minimum 30% of max length before breaking (avoid tiny fragments)
+5. Hard split as last resort
+
+**429 rate limit handling:**
+
+```javascript
+async function apiRequestWithRetry(method, params, maxRetries = 2) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await apiRequest(method, params);
+    } catch (err) {
+      if (err.response?.error_code === 429 && attempt < maxRetries) {
+        const retryAfter = (err.response.parameters?.retry_after || 5) * 1000;
+        console.warn(`[telegram] Rate limited, retrying in ${retryAfter}ms`);
+        await sleep(retryAfter);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+```
+
+Inter-chunk delay increased from 300ms to 500ms to reduce 429 likelihood.
+
+**Files affected:** `scripts/send.js` (`splitMessage` function, `apiRequest` wrapper)
+
+**Complexity:** Low
+
+---
+
+### 10. Telegram Topic/Forum Thread Support
+
+**What:** Handle Telegram topic threads (forum groups) with isolated context.
+
+**Why:** Telegram Topics (forum mode) is a production feature already in use across
+many supergroups. Each topic is an isolated conversation thread. Without support,
+messages from different topics get mixed into a single group context, producing
+confusing results for Claude.
+
+**Design (from zylos-lark's thread isolation):**
+
+- Detect `ctx.message.message_thread_id` (Telegram's topic thread ID)
+- **Composite isolation key:** `chatId:threadId` — thread IDs are NOT globally unique,
+  only unique within a chat. Using bare `threadId` as a history map key would cause
+  collisions across different groups.
+
+```javascript
+function getHistoryKey(chatId, threadId) {
+  return threadId ? `${chatId}:${threadId}` : String(chatId);
+}
+
+// In message handler:
+const historyKey = getHistoryKey(chatId, ctx.message.message_thread_id);
+recordHistoryEntry(historyKey, entry);  // Isolated per-topic history
+
+// Context retrieval:
+const context = getHistory(historyKey);  // Only messages from same topic
+```
+
+- Build endpoint with thread info: `chatId|msg:messageId|thread:threadId`
+- `send.js` parses `thread:` and includes `message_thread_id` in Telegram API call
+  to post the reply in the correct topic
+- Format with `<thread-context>` and `<thread-root>` tags
+
+**Files affected:** `src/bot.js` (thread detection), `src/lib/context.js` (composite
+key history), `scripts/send.js` (parse thread, send to correct topic)
+
+**Complexity:** Medium
+
+---
+
+### 11. User Name Caching
 
 **What:** Cache Telegram user display names with in-memory TTL and file persistence.
 
-**Why:** Currently uses raw `ctx.from.username || ctx.from.first_name` on every message.
-This works for most cases, but:
-- Some users have no username (only first_name which may be generic)
-- Group context shows user_id if name wasn't captured at message time
-- No persistence across restarts
+**Why:** Telegram provides `from.username` / `from.first_name` in every update, so
+this is lower priority than on Lark (which requires API calls). However, caching
+still provides:
+- Consistency across context messages (same user always shows same resolved name)
+- Name persistence across restarts (cold-start replay has names ready)
+- Foundation for future `getChatMember()` enrichment if needed
 
-**Design (adapted from zylos-lark):**
+**Design (adapted from zylos-lark, simplified):**
 
 ```javascript
 const userCache = new Map();  // userId -> { name, expireAt }
@@ -290,7 +606,6 @@ function resolveUserName(ctx) {
   const cached = userCache.get(userId);
   if (cached && cached.expireAt > Date.now()) return cached.name;
 
-  // Resolve from context (Telegram provides this in every update)
   const name = ctx.from.username || ctx.from.first_name || String(ctx.from.id);
   userCache.set(userId, { name, expireAt: Date.now() + USER_CACHE_TTL });
   markCacheDirty();
@@ -301,125 +616,32 @@ function resolveUserName(ctx) {
 // Load from file on startup for cold-start names
 ```
 
-**Note:** Unlike zylos-lark which needs API calls to resolve Lark user IDs, Telegram
-always provides `from.username` / `from.first_name` in the update. So the cache is
-mainly for:
-1. Consistency across context messages (same user always shows same name)
-2. Persistence across restarts
-3. Future: `getChatMember()` API call for richer profiles if needed
-
 **Files affected:** New `src/lib/user-cache.js`, `src/bot.js` (use cached names)
 
-**Complexity:** Low — simpler than zylos-lark's version since Telegram provides names
-in every update.
+**Complexity:** Low
 
 ---
 
-### P2 — Improved Message Chunking in send.js
+## Implementation Sequence
 
-**What:** Upgrade message splitting to preserve markdown code blocks and prefer
-semantic break points.
-
-**Why:** Current `splitMessage()` splits on line breaks only, which can break
-markdown code blocks (splitting in the middle of a ``` block). zylos-lark's chunking
-logic handles this correctly.
-
-**Design (from zylos-lark):**
-
-1. Never split inside a code block (track ``` open/close state)
-2. Prefer paragraph breaks (`\n\n`) over line breaks (`\n`)
-3. Prefer line breaks over word boundaries
-4. Ensure minimum 30% of max length before breaking (avoid tiny fragments)
-5. Hard split as last resort
-
-**Files affected:** `scripts/send.js` (`splitMessage` function)
-
-**Complexity:** Low — isolated function replacement with better algorithm.
-
----
-
-### P3 — Reply-To in send.js (Group Replies)
-
-**What:** When Claude responds to a group @mention, reply to the triggering message
-instead of sending a standalone message.
-
-**Why:** In group chats, a standalone message from the bot has no visual connection to
-the question that triggered it. Telegram's reply-to creates a clear visual thread.
-OpenClaw uses this extensively for UX clarity.
-
-**Design:**
-
-The C4 endpoint string needs to carry the trigger message_id:
+All changes ship in v0.2.0. Recommended implementation order (based on dependencies):
 
 ```
-# Current endpoint:
-"telegram" "-100123456789"
-
-# Proposed endpoint (from zylos-lark pattern):
-"telegram" "-100123456789|msg:12345"
+1. Endpoint format parser (shared utility, needed by most changes)
+2. In-memory chat history + log-file replay (core data structure)
+3. Mention detection via entities API (fixes fragile detection)
+4. Structured message format (XML tags + escaping)
+5. Reply-to context (incoming, uses XML tags)
+6. Reply-to in send.js (outgoing, uses endpoint parser)
+7. Typing indicator with correlation ID (uses endpoint parser)
+8. Bot outgoing message recording (uses in-memory history)
+9. Improved message chunking + rate limit handling (send.js)
+10. Enhanced group policy model + migration (config change)
+11. Topic/forum thread support (uses composite key + endpoint)
+12. User name caching (independent, low priority)
 ```
 
-`send.js` parses the endpoint, extracts `msg:`, and uses `reply_to_message_id` in the
-Telegram API call:
-
-```javascript
-await apiRequest('sendMessage', {
-  chat_id: chatId,
-  text: text,
-  reply_to_message_id: messageId  // Reply to trigger message
-});
-```
-
-**Files affected:** `src/bot.js` (build structured endpoint), `scripts/send.js`
-(parse endpoint, add reply_to_message_id)
-
-**Complexity:** Low — Telegram API natively supports `reply_to_message_id`.
-
----
-
-### P3 — Telegram Topic/Forum Thread Support
-
-**What:** Handle Telegram topic threads (forum groups) with isolated context.
-
-**Why:** Telegram supergroups can enable "Topics" (forum mode), where each topic is
-an isolated thread. Currently these messages are treated as regular group messages
-with no thread isolation. This is a forward-looking feature since topic adoption is
-growing.
-
-**Design (from zylos-lark's thread isolation):**
-
-- Detect `ctx.message.message_thread_id` (Telegram's topic thread ID)
-- Store topic messages in separate history: `chatHistories[threadId]`
-- Build endpoint with thread info: `chatId|thread:threadId|msg:messageId`
-- Format with `<thread-context>` tags when in a topic
-
-**Files affected:** `src/bot.js` (thread detection), `src/lib/context.js` (thread
-history isolation), `scripts/send.js` (parse thread from endpoint)
-
-**Complexity:** Medium — requires understanding Telegram's forum/topic API nuances.
-Defer until topic threads are actively used.
-
----
-
-## Implementation Order
-
-```
-Phase 1 (v0.2.0) — Core Performance & UX
-  ├── P0: In-memory chat history
-  ├── P0: Typing indicator
-  ├── P1: Structured message format (XML tags)
-  └── P1: Reply-to context
-
-Phase 2 (v0.2.x) — Intelligence & Configuration
-  ├── P1: Bot outgoing message recording
-  ├── P2: Enhanced group policy model
-  ├── P2: User name caching
-  └── P2: Improved message chunking
-
-Phase 3 (v0.3.0) — Advanced Features
-  ├── P3: Reply-to in send.js (group replies)
-  └── P3: Topic/forum thread support
-```
+Steps 1-6 are the foundation; 7-12 build on them. No circular dependencies.
 
 ## What We're NOT Doing
 
@@ -428,17 +650,17 @@ These OpenClaw patterns are explicitly out of scope to maintain simplicity:
 - **7-layer fallback routing** — Over-engineered for our use case. We route by chat_id.
 - **Multi-account support** — We run one bot per agent instance.
 - **grammY migration** — Telegraf works fine and the team knows it. No framework churn.
-- **Rate limiting / backoff middleware** — Telegram's API is generous; handle errors
-  when they happen rather than preemptively throttling.
 - **Silent failure modes** — We prefer explicit error logging over silent degradation.
 - **Gateway architecture** — Our direct bot-to-C4 pipeline is simple and effective.
 
 ## Migration & Compatibility
 
-- **Config migration:** `post-upgrade.js` handles schema changes. Legacy `allowed_groups[]`
-  and `smart_groups[]` arrays are auto-migrated to the `groups` map on first upgrade.
-- **Log file format:** No change to `logs/{chatId}.log` format. In-memory history
-  is an optimization layer, not a replacement.
-- **C4 endpoint format:** Backward compatible. Plain `chatId` continues to work;
-  `chatId|msg:xxx` is an additive extension.
-- **Version bump:** v0.1.1 → v0.2.0 (minor version for new features, no breaking changes).
+- **Config migration:** `post-upgrade.js` auto-migrates legacy `allowed_groups[]` and
+  `smart_groups[]` to the `groups` map. Legacy arrays are removed after migration.
+- **Log file format:** No change to `logs/{chatId}.log` format. In-memory history is
+  an optimization layer; log files remain the source of truth for cold-start replay.
+- **C4 endpoint format:** Backward compatible. Plain `chatId` (no `|`) continues to
+  work; `chatId|msg:xxx|req:yyy|thread:zzz` is an additive extension with
+  order-insensitive parsing.
+- **Version bump:** v0.1.1 → v0.2.0 (minor version for new features, no breaking
+  changes to external interfaces).
