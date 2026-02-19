@@ -425,6 +425,9 @@ bot.on('text', (ctx) => {
     const mentioned = isBotMentioned(ctx);
     const senderIsOwner = isOwner(config, ctx);
 
+    // Replay log history before recording new entry to preserve chronological order
+    ensureReplay(String(chatId));
+
     if (isAllowed) {
       logAndRecord(chatId, logEntry);
     }
@@ -453,8 +456,6 @@ bot.on('text', (ctx) => {
     }
 
     const historyKey = getHistoryKey(chatId, threadId);
-    ensureReplay(String(chatId));
-
     const contextMessages = getHistory(historyKey, messageId);
     const quotedContent = getReplyToContext(ctx);
     const groupName = getGroupName(config, chatId, ctx.chat.title);
@@ -551,6 +552,9 @@ bot.on('photo', async (ctx) => {
   const isSmart = isSmartGroup(config, chatId);
   if (!isAllowed && !isSmart) return;
 
+  // Replay log history before recording new entry to preserve chronological order
+  ensureReplay(String(chatId));
+
   // Build log text with photo metadata for context
   const photos = ctx.message.photo;
   const fileId = photos[photos.length - 1].file_id;
@@ -579,7 +583,6 @@ bot.on('photo', async (ctx) => {
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
       const correlationId = `${chatId}:${messageId}`;
       startTypingIndicator(chatId, correlationId);
-      ensureReplay(String(chatId));
 
       const msg = formatMessage({
         chatType,
@@ -672,6 +675,9 @@ bot.on('document', async (ctx) => {
   const isSmart = isSmartGroup(config, chatId);
   if (!isAllowed && !isSmart) return;
 
+  // Replay log history before recording new entry to preserve chronological order
+  ensureReplay(String(chatId));
+
   // Build log text with file metadata for context
   const doc = ctx.message.document;
   const caption = ctx.message.caption || '';
@@ -699,7 +705,6 @@ bot.on('document', async (ctx) => {
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
       const correlationId = `${chatId}:${messageId}`;
       startTypingIndicator(chatId, correlationId);
-      ensureReplay(String(chatId));
 
       const msg = formatMessage({
         chatType,
