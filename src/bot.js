@@ -509,7 +509,12 @@ bot.on('text', (ctx) => {
 
     const endpoint = buildEndpoint(chatId, { messageId, threadId });
     const correlationId = `${chatId}:${messageId}`;
-    startTypingIndicator(chatId, correlationId, threadId);
+    const smartNoMention = isSmart && !mentioned;
+
+    // No typing for smart mode without @mention — wait for AI decision
+    if (!smartNoMention) {
+      startTypingIndicator(chatId, correlationId, threadId);
+    }
 
     const sendReplyOpts = threadId ? { message_thread_id: threadId } : {};
     const msg = formatMessage({
@@ -521,7 +526,7 @@ bot.on('text', (ctx) => {
       quotedContent,
       mediaPath: null,
       isThread: !!threadId,
-      smartHint: isSmart && !mentioned
+      smartHint: smartNoMention
     });
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
@@ -649,13 +654,12 @@ bot.on('photo', async (ctx) => {
     return;
   }
 
-  // Not @mentioned in smart group: forward without downloading
+  // Not @mentioned in smart group: forward without downloading, no typing
   if (isSmart) {
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
 
     const endpoint = buildEndpoint(chatId, { messageId, threadId });
     const correlationId = `${chatId}:${messageId}`;
-    startTypingIndicator(chatId, correlationId, threadId);
 
     const msg = formatMessage({
       chatType,
@@ -796,13 +800,12 @@ bot.on('document', async (ctx) => {
     return;
   }
 
-  // Not @mentioned in smart group: forward without downloading
+  // Not @mentioned in smart group: forward without downloading, no typing
   if (isSmart) {
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
 
     const endpoint = buildEndpoint(chatId, { messageId, threadId });
     const correlationId = `${chatId}:${messageId}`;
-    startTypingIndicator(chatId, correlationId, threadId);
 
     const msg = formatMessage({
       chatType,

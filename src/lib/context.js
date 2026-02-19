@@ -206,7 +206,7 @@ export function formatMessage(opts) {
 
   // Smart mode hint — helps AI decide whether to respond
   if (smartHint) {
-    parts.push(`<smart-mode>\nThis message was NOT directed at you (no @mention). Use your judgment: only respond if the message is relevant to you or your ongoing conversation. If it is clearly meant for someone else or another bot, reply with exactly [SKIP] to stay silent.\n</smart-mode>\n\n`);
+    parts.push(`<smart-mode>\nDecide whether to respond. Do NOT reply if: the message is unrelated to you, just casual chat, or doesn't need your input. Only reply when: 1) someone asks a question you can help with, 2) discussing technical topics you know well, 3) someone clearly needs assistance. When uncertain, prefer NOT to reply. Reply with exactly [SKIP] to stay silent.\n</smart-mode>\n\n`);
   }
 
   // Current message
