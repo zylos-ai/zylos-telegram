@@ -572,6 +572,7 @@ bot.on('photo', async (ctx) => {
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
       const correlationId = `${chatId}:${messageId}`;
       startTypingIndicator(chatId, correlationId);
+      ensureReplay(String(chatId));
 
       const msg = formatMessage({
         chatType,
@@ -687,6 +688,7 @@ bot.on('document', async (ctx) => {
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
       const correlationId = `${chatId}:${messageId}`;
       startTypingIndicator(chatId, correlationId);
+      ensureReplay(String(chatId));
 
       const msg = formatMessage({
         chatType,
