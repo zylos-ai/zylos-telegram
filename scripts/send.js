@@ -298,6 +298,13 @@ async function recordOutgoing(text) {
  */
 async function main() {
   try {
+    // Smart mode skip — AI decided not to respond
+    if (message.trim() === '[SKIP]') {
+      markTypingDone();
+      console.log('Skipped (smart mode, not relevant)');
+      return;
+    }
+
     if (message.startsWith('[MEDIA:image]')) {
       const filePath = message.substring('[MEDIA:image]'.length);
       await sendPhoto(filePath);

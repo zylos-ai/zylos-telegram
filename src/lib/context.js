@@ -174,7 +174,8 @@ export function logAndRecord(chatId, entry) {
 export function formatMessage(opts) {
   const {
     chatType, groupName, userName, text,
-    contextMessages, quotedContent, mediaPath, isThread
+    contextMessages, quotedContent, mediaPath, isThread,
+    smartHint
   } = opts;
 
   // Prefix
@@ -201,6 +202,11 @@ export function formatMessage(opts) {
     const sender = escapeXml(quotedContent.sender || 'unknown');
     const quoted = escapeXml(quotedContent.text || '');
     parts.push(`<replying-to>\n[${sender}]: ${quoted}\n</replying-to>\n\n`);
+  }
+
+  // Smart mode hint — helps AI decide whether to respond
+  if (smartHint) {
+    parts.push(`<smart-mode>\nThis message was NOT directed at you (no @mention). Use your judgment: only respond if the message is relevant to you or your ongoing conversation. If it is clearly meant for someone else or another bot, reply with exactly [SKIP] to stay silent.\n</smart-mode>\n\n`);
   }
 
   // Current message

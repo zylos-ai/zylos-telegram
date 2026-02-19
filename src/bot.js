@@ -520,7 +520,8 @@ bot.on('text', (ctx) => {
       contextMessages,
       quotedContent,
       mediaPath: null,
-      isThread: !!threadId
+      isThread: !!threadId,
+      smartHint: isSmart && !mentioned
     });
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
@@ -664,7 +665,8 @@ bot.on('photo', async (ctx) => {
       contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId),
       quotedContent: getReplyToContext(ctx),
       mediaPath: null,
-      isThread: !!threadId
+      isThread: !!threadId,
+      smartHint: true
     });
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
@@ -810,7 +812,8 @@ bot.on('document', async (ctx) => {
       contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId),
       quotedContent: getReplyToContext(ctx),
       mediaPath: null,
-      isThread: !!threadId
+      isThread: !!threadId,
+      smartHint: true
     });
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
