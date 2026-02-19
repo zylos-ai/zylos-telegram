@@ -273,10 +273,11 @@ async function recordOutgoing(text) {
   const cfg = loadConfig();
   const port = cfg.internal_port || 3460;
   try {
+    // Truncate before sending — server only stores first 500 chars anyway
     const body = JSON.stringify({
       chatId,
       threadId: threadId || null,
-      text
+      text: text.substring(0, 500)
     });
     await fetch(`http://127.0.0.1:${port}/internal/record-outgoing`, {
       method: 'POST',
