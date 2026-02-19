@@ -788,8 +788,9 @@ These OpenClaw patterns are explicitly out of scope to maintain simplicity:
 
 - **Config migration:** `post-upgrade.js` auto-migrates legacy `allowed_groups[]` and
   `smart_groups[]` to the `groups` map. Legacy arrays are removed after migration.
-- **Log file format:** No change to `logs/{chatId}.log` format. In-memory history is
-  an optimization layer; log files remain the source of truth for cold-start replay.
+- **Log file format:** Additive backward-compatible schema change: `thread_id` field
+  added to log entries. Existing entries without `thread_id` are treated as non-topic
+  messages during replay. Log files remain the source of truth for cold-start replay.
 - **C4 endpoint format:** Backward compatible. Plain `chatId` (no `|`) continues to
   work; `chatId|msg:xxx|req:yyy|thread:zzz` is an additive extension with
   order-insensitive parsing.
