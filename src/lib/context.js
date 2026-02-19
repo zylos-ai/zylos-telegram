@@ -5,7 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import { DATA_DIR, loadConfig } from './config.js';
-import { getHistoryKey, escapeXml } from './utils.js';
+import { getHistoryKey, historyKeyToLogFile, escapeXml } from './utils.js';
 
 const LOGS_DIR = path.join(DATA_DIR, 'logs');
 fs.mkdirSync(LOGS_DIR, { recursive: true });
@@ -17,8 +17,8 @@ fs.mkdirSync(LOGS_DIR, { recursive: true });
 /** @type {Map<string, Array<HistoryEntry>>} */
 const chatHistories = new Map();
 
-/** @type {Set<string>} Track which chatIds have been replayed from log files */
-const _replayedChats = new Set();
+/** @type {Set<string>} Track which historyKeys have been replayed from log files */
+const _replayedKeys = new Set();
 
 /**
  * @typedef {Object} HistoryEntry
@@ -92,49 +92,41 @@ export function getHistory(historyKey, excludeMessageId) {
 // ============================================================
 
 /**
- * Ensure in-memory history is populated for a given chatId.
- * On first access after restart, reads tail of log file and routes entries
- * to the correct historyKey (per-topic or flat).
+ * Ensure in-memory history is populated for a given historyKey.
+ * On first access after restart, reads tail of the per-key log file.
  *
- * @param {string} chatId - The Telegram chat ID (NOT composite historyKey)
+ * @param {string} historyKey - From getHistoryKey() (chatId or chatId:threadId)
  */
-export function ensureReplay(chatId) {
-  chatId = String(chatId);
-  if (_replayedChats.has(chatId)) return;
+export function ensureReplay(historyKey) {
+  historyKey = String(historyKey);
+  if (_replayedKeys.has(historyKey)) return;
 
-  const logFile = path.join(LOGS_DIR, `${chatId}.log`);
+  const logFile = path.join(LOGS_DIR, historyKeyToLogFile(historyKey));
   if (!fs.existsSync(logFile)) {
-    _replayedChats.add(chatId);
+    _replayedKeys.add(historyKey);
     return;
   }
 
-  const config = loadConfig();
-  // Use per-group limit if available, otherwise global default
-  const groupLimit = config.groups?.[chatId]?.historyLimit;
-  const globalLimit = config.message?.context_messages || 5;
-  const limit = Math.max(groupLimit || 0, globalLimit);
-  // Read extra lines to account for thread distribution
-  const readLimit = limit * 3;
+  const limit = getHistoryLimit(historyKey);
 
   try {
     const content = fs.readFileSync(logFile, 'utf-8');
     const lines = content.trim().split('\n').filter(l => l);
-    const tail = lines.slice(-readLimit);
+    const tail = lines.slice(-limit);
 
     for (const line of tail) {
       let entry;
       try { entry = JSON.parse(line); } catch { continue; }
-      const hk = getHistoryKey(chatId, entry.thread_id || null);
-      recordHistoryEntry(hk, entry);
+      recordHistoryEntry(historyKey, entry);
     }
 
-    _replayedChats.add(chatId);
+    _replayedKeys.add(historyKey);
     if (tail.length > 0) {
-      console.log(`[telegram] Replayed ${tail.length} log entries for chat ${chatId}`);
+      console.log(`[telegram] Replayed ${tail.length} log entries for ${historyKey}`);
     }
   } catch (err) {
     // Don't mark as replayed on failure — allow retry on next message
-    console.error(`[telegram] Log replay failed for ${chatId}: ${err.message}`);
+    console.error(`[telegram] Log replay failed for ${historyKey}: ${err.message}`);
   }
 }
 
@@ -143,7 +135,7 @@ export function ensureReplay(chatId) {
 // ============================================================
 
 /**
- * Append a log entry to the chat's log file.
+ * Append a log entry to the per-key log file.
  * Also records to in-memory history.
  *
  * @param {string} chatId
@@ -151,13 +143,13 @@ export function ensureReplay(chatId) {
  */
 export function logAndRecord(chatId, entry) {
   chatId = String(chatId);
+  const hk = getHistoryKey(chatId, entry.thread_id || null);
 
-  // File log (audit)
-  const logFile = path.join(LOGS_DIR, `${chatId}.log`);
+  // File log (audit) — per historyKey
+  const logFile = path.join(LOGS_DIR, historyKeyToLogFile(hk));
   fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
 
   // In-memory history
-  const hk = getHistoryKey(chatId, entry.thread_id || null);
   recordHistoryEntry(hk, entry);
 }
 

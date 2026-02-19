@@ -40,6 +40,17 @@ export function getHistoryKey(chatId, threadId) {
 }
 
 /**
+ * Convert a historyKey to a safe log filename.
+ * Replaces ':' with '_t_' to avoid colon in filenames.
+ *
+ * @param {string} historyKey - From getHistoryKey()
+ * @returns {string} e.g. "-100123456.log" or "-100123456_t_789.log"
+ */
+export function historyKeyToLogFile(historyKey) {
+  return historyKey.replace(':', '_t_') + '.log';
+}
+
+/**
  * Escape user-generated content for safe embedding inside XML tags.
  * Prevents tag injection from user messages.
  *

@@ -435,7 +435,7 @@ bot.on('text', (ctx) => {
     const senderIsOwner = isOwner(config, ctx);
 
     // Replay log history before recording new entry to preserve chronological order
-    ensureReplay(String(chatId));
+    ensureReplay(getHistoryKey(chatId, threadId));
 
     if (isAllowed) {
       logAndRecord(chatId, logEntry);
@@ -562,7 +562,7 @@ bot.on('photo', async (ctx) => {
   if (!isAllowed && !isSmart) return;
 
   // Replay log history before recording new entry to preserve chronological order
-  ensureReplay(String(chatId));
+  ensureReplay(getHistoryKey(chatId, threadId));
 
   // Build log text with photo metadata for context
   const photos = ctx.message.photo;
@@ -685,7 +685,7 @@ bot.on('document', async (ctx) => {
   if (!isAllowed && !isSmart) return;
 
   // Replay log history before recording new entry to preserve chronological order
-  ensureReplay(String(chatId));
+  ensureReplay(getHistoryKey(chatId, threadId));
 
   // Build log text with file metadata for context
   const doc = ctx.message.document;
