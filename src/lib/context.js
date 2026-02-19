@@ -101,14 +101,19 @@ export function getHistory(historyKey, excludeMessageId) {
 export function ensureReplay(chatId) {
   chatId = String(chatId);
   if (_replayedChats.has(chatId)) return;
-  _replayedChats.add(chatId);
 
   const logFile = path.join(LOGS_DIR, `${chatId}.log`);
-  if (!fs.existsSync(logFile)) return;
+  if (!fs.existsSync(logFile)) {
+    _replayedChats.add(chatId);
+    return;
+  }
 
   const config = loadConfig();
-  const limit = config.message?.context_messages || 10;
-  // Read last limit*3 lines to account for thread distribution
+  // Use per-group limit if available, otherwise global default
+  const groupLimit = config.groups?.[chatId]?.historyLimit;
+  const globalLimit = config.message?.context_messages || 10;
+  const limit = Math.max(groupLimit || 0, globalLimit);
+  // Read extra lines to account for thread distribution
   const readLimit = limit * 3;
 
   try {
@@ -123,10 +128,12 @@ export function ensureReplay(chatId) {
       recordHistoryEntry(hk, entry);
     }
 
+    _replayedChats.add(chatId);
     if (tail.length > 0) {
       console.log(`[telegram] Replayed ${tail.length} log entries for chat ${chatId}`);
     }
   } catch (err) {
+    // Don't mark as replayed on failure — allow retry on next message
     console.error(`[telegram] Log replay failed for ${chatId}: ${err.message}`);
   }
 }

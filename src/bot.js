@@ -22,7 +22,7 @@ import {
 import { downloadPhoto, downloadDocument } from './lib/media.js';
 import {
   logAndRecord, ensureReplay, getHistory,
-  recordHistoryEntry, formatMessage
+  formatMessage
 } from './lib/context.js';
 import {
   resolveUserName,
@@ -769,13 +769,13 @@ const internalServer = http.createServer((req, res) => {
         return;
       }
 
-      const historyKey = getHistoryKey(chatId, threadId);
-      recordHistoryEntry(historyKey, {
+      logAndRecord(chatId, {
         timestamp: new Date().toISOString(),
         message_id: `bot:${Date.now()}`,
         user_id: 'bot',
         user_name: bot.botInfo?.username || 'bot',
-        text: text.substring(0, 500)
+        text: text.substring(0, 500),
+        thread_id: threadId || null
       });
       res.writeHead(200).end('ok');
     });
