@@ -547,7 +547,6 @@ bot.on('photo', async (ctx) => {
         stopTypingIndicator(correlationId);
         bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
-      ctx.reply('Photo received!');
     } catch (err) {
       console.error(`[telegram] Photo download error: ${err.message}`);
       ctx.reply('Failed to download photo.');
@@ -670,7 +669,6 @@ bot.on('document', async (ctx) => {
         stopTypingIndicator(correlationId);
         bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
-      ctx.reply('File received!');
     } catch (err) {
       console.error(`[telegram] Document download error: ${err.message}`);
       ctx.reply('Failed to download file.');
