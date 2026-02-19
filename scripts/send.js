@@ -279,7 +279,7 @@ async function recordOutgoing(text) {
       threadId: threadId || null,
       text: text.substring(0, 500)
     });
-    await fetch(`http://127.0.0.1:${port}/internal/record-outgoing`, {
+    const resp = await fetch(`http://127.0.0.1:${port}/internal/record-outgoing`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -287,6 +287,9 @@ async function recordOutgoing(text) {
       },
       body
     });
+    if (!resp.ok) {
+      console.warn(`[telegram] recordOutgoing failed: ${resp.status}`);
+    }
   } catch {}
 }
 

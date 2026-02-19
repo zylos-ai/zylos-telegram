@@ -51,15 +51,15 @@ if (fs.existsSync(configPath)) {
       migrations.push('Removed dead features.max_message_length');
     }
 
-    // Migration 2: Add allowed_groups if missing
-    if (config.allowed_groups === undefined) {
+    // Migration 2: Add allowed_groups if missing (skip if already using v0.2 groups map)
+    if (config.allowed_groups === undefined && !config.groups) {
       config.allowed_groups = [];
       migrated = true;
       migrations.push('Added allowed_groups array');
     }
 
-    // Migration 3: Add smart_groups if missing
-    if (config.smart_groups === undefined) {
+    // Migration 3: Add smart_groups if missing (skip if already using v0.2 groups map)
+    if (config.smart_groups === undefined && !config.groups) {
       config.smart_groups = [];
       migrated = true;
       migrations.push('Added smart_groups array');

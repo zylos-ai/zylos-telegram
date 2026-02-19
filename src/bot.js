@@ -333,7 +333,7 @@ bot.on('new_chat_members', (ctx) => {
   const chatTitle = ctx.chat.title || 'Unknown Group';
   const addedById = String(ctx.from.id);
 
-  if (config.owner?.chat_id === addedById) {
+  if (String(config.owner?.chat_id) === addedById) {
     const added = addGroup(config, chatId, chatTitle, 'mention');
     if (added) {
       ctx.reply(`Group added. Members can now @${bot.botInfo?.username} to chat.`);
