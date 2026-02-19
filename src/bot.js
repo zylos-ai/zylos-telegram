@@ -511,8 +511,14 @@ bot.on('text', (ctx) => {
     const correlationId = `${chatId}:${messageId}`;
     const smartNoMention = isSmart && !mentioned;
 
-    // No typing for smart mode without @mention — wait for AI decision
-    if (!smartNoMention) {
+    // Smart mode without @mention: eyes reaction instead of typing
+    if (smartNoMention) {
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+      }).catch(() => {});
+    } else {
       startTypingIndicator(chatId, correlationId, threadId);
     }
 
@@ -654,12 +660,18 @@ bot.on('photo', async (ctx) => {
     return;
   }
 
-  // Not @mentioned in smart group: forward without downloading, no typing
+  // Not @mentioned in smart group: forward without downloading, eyes reaction
   if (isSmart) {
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
 
     const endpoint = buildEndpoint(chatId, { messageId, threadId });
     const correlationId = `${chatId}:${messageId}`;
+
+    bot.telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+    }).catch(() => {});
 
     const msg = formatMessage({
       chatType,
@@ -800,12 +812,18 @@ bot.on('document', async (ctx) => {
     return;
   }
 
-  // Not @mentioned in smart group: forward without downloading, no typing
+  // Not @mentioned in smart group: forward without downloading, eyes reaction
   if (isSmart) {
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
 
     const endpoint = buildEndpoint(chatId, { messageId, threadId });
     const correlationId = `${chatId}:${messageId}`;
+
+    bot.telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+    }).catch(() => {});
 
     const msg = formatMessage({
       chatType,

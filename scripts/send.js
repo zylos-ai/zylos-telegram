@@ -294,12 +294,26 @@ async function recordOutgoing(text) {
 }
 
 /**
+ * Remove eyes reaction from trigger message (smart mode cleanup).
+ */
+function clearReaction() {
+  if (!triggerMsgId) return;
+  try {
+    const params = JSON.stringify({ chat_id: chatId, message_id: triggerMsgId, reaction: [] });
+    let cmd = `curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setMessageReaction" -H "Content-Type: application/json" -d '${params.replace(/'/g, "'\\''")}'`;
+    if (PROXY_URL) cmd = cmd.replace('curl ', `curl --proxy "${PROXY_URL}" `);
+    execSync(cmd, { encoding: 'utf8' });
+  } catch {}
+}
+
+/**
  * Main
  */
 async function main() {
   try {
     // Smart mode skip — AI decided not to respond
     if (message.trim() === '[SKIP]') {
+      clearReaction();
       markTypingDone();
       console.log('Skipped (smart mode, not relevant)');
       return;
@@ -307,6 +321,7 @@ async function main() {
 
     if (message.startsWith('[MEDIA:image]')) {
       const filePath = message.substring('[MEDIA:image]'.length);
+      clearReaction();
       await sendPhoto(filePath);
       markTypingDone();
       await recordOutgoing('[sent a photo]');
@@ -316,6 +331,7 @@ async function main() {
 
     if (message.startsWith('[MEDIA:file]')) {
       const filePath = message.substring('[MEDIA:file]'.length);
+      clearReaction();
       await sendDocument(filePath);
       markTypingDone();
       await recordOutgoing(`[sent a file: ${path.basename(filePath)}]`);
@@ -323,6 +339,7 @@ async function main() {
       return;
     }
 
+    clearReaction();
     await sendText(message);
     markTypingDone();
     await recordOutgoing(message);
