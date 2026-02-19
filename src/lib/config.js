@@ -6,6 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
+import { deepMergeDefaults } from './utils.js';
 
 // Load .env from ~/zylos/.env (not cwd which may be skill directory)
 dotenv.config({ path: path.join(process.env.HOME, 'zylos/.env') });
@@ -18,6 +19,10 @@ export const DEFAULT_CONFIG = {
   enabled: true,
   owner: { chat_id: null, username: null, bound_at: null },
   whitelist: { chat_ids: [], usernames: [] },
+  // New v0.2.0 group policy (replaces allowed_groups/smart_groups after migration)
+  groupPolicy: 'allowlist',   // 'disabled' | 'allowlist' | 'open'
+  groups: {},                 // { [chatId]: { name, mode, allowFrom, historyLimit, added_at } }
+  // Legacy fields kept for migration compatibility
   group_whitelist: { enabled: true },
   allowed_groups: [],
   smart_groups: [],
@@ -26,16 +31,17 @@ export const DEFAULT_CONFIG = {
   },
   message: {
     context_messages: 10
-  }
+  },
+  internal_port: 3460         // Port for internal HTTP server (record-outgoing)
 };
 
 export function loadConfig() {
   try {
     const data = fs.readFileSync(CONFIG_PATH, 'utf8');
-    return { ...DEFAULT_CONFIG, ...JSON.parse(data) };
+    return deepMergeDefaults(DEFAULT_CONFIG, JSON.parse(data));
   } catch (err) {
     console.error('[telegram] Failed to load config, using defaults:', err.message);
-    return DEFAULT_CONFIG;
+    return { ...DEFAULT_CONFIG };
   }
 }
 
