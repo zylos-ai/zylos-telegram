@@ -82,6 +82,17 @@ function parseC4Response(stdout) {
 }
 
 /**
+ * Remove eyes reaction from a message (best-effort, fire-and-forget).
+ */
+function clearReaction(chatId, messageId) {
+  bot.telegram.callApi('setMessageReaction', {
+    chat_id: chatId,
+    message_id: messageId,
+    reaction: JSON.stringify([])
+  }).catch(() => {});
+}
+
+/**
  * Send message to Claude via C4
  * @param {string} source - Channel name
  * @param {string} endpoint - Endpoint ID
@@ -463,6 +474,7 @@ bot.on('text', (ctx) => {
     });
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
+      clearReaction(chatId, messageId);
       bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
     });
     return;
@@ -540,6 +552,7 @@ bot.on('text', (ctx) => {
     });
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
+      clearReaction(chatId, messageId);
       bot.telegram.sendMessage(chatId, errMsg, sendReplyOpts).catch(() => {});
     });
   }
@@ -603,6 +616,7 @@ bot.on('photo', async (ctx) => {
       });
       sendToC4('telegram', endpoint, msg, (errMsg) => {
         stopTypingIndicator(correlationId);
+        clearReaction(chatId, messageId);
         bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
     } catch (err) {
@@ -666,6 +680,7 @@ bot.on('photo', async (ctx) => {
       });
       sendToC4('telegram', endpoint, msg, (errMsg) => {
         stopTypingIndicator(correlationId);
+        clearReaction(chatId, messageId);
         bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
     } catch (err) {
@@ -700,6 +715,7 @@ bot.on('photo', async (ctx) => {
     });
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
+      clearReaction(chatId, messageId);
       bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
     });
     return;
@@ -766,6 +782,7 @@ bot.on('document', async (ctx) => {
       });
       sendToC4('telegram', endpoint, msg, (errMsg) => {
         stopTypingIndicator(correlationId);
+        clearReaction(chatId, messageId);
         bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
     } catch (err) {
@@ -828,6 +845,7 @@ bot.on('document', async (ctx) => {
       });
       sendToC4('telegram', endpoint, msg, (errMsg) => {
         stopTypingIndicator(correlationId);
+        clearReaction(chatId, messageId);
         bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
     } catch (err) {
@@ -862,6 +880,7 @@ bot.on('document', async (ctx) => {
     });
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
+      clearReaction(chatId, messageId);
       bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
     });
     return;

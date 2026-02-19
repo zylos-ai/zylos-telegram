@@ -295,14 +295,16 @@ async function recordOutgoing(text) {
 
 /**
  * Remove eyes reaction from trigger message (smart mode cleanup).
+ * Reuses apiRequest() for consistent proxy/serialization handling.
  */
 function clearReaction() {
   if (!triggerMsgId) return;
   try {
-    const params = JSON.stringify({ chat_id: chatId, message_id: triggerMsgId, reaction: [] });
-    let cmd = `curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setMessageReaction" -H "Content-Type: application/json" -d '${params.replace(/'/g, "'\\''")}'`;
-    if (PROXY_URL) cmd = cmd.replace('curl ', `curl --proxy "${PROXY_URL}" `);
-    execSync(cmd, { encoding: 'utf8' });
+    apiRequest('setMessageReaction', {
+      chat_id: chatId,
+      message_id: triggerMsgId,
+      reaction: []
+    });
   } catch {}
 }
 
