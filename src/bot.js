@@ -123,6 +123,7 @@ function sendToC4(source, endpoint, content, onReject) {
           if (onReject) onReject(retryResponse.error.message);
         } else {
           console.error(`[telegram] C4 send failed after retry: ${retryError.message}`);
+          if (onReject) onReject('Internal error, please try again.');
         }
       });
     }, 2000);
@@ -424,16 +425,15 @@ bot.on('text', (ctx) => {
     const mentioned = isBotMentioned(ctx);
     const senderIsOwner = isOwner(config, ctx);
 
-    let logged = false;
     if (isAllowed || senderIsOwner) {
       logAndRecord(chatId, logEntry);
-      logged = true;
     }
 
+    const policy = config.groupPolicy || 'allowlist';
     const shouldRespond =
       isSmart ||
       (isAllowed && mentioned) ||
-      (senderIsOwner && mentioned);
+      (policy !== 'disabled' && senderIsOwner && mentioned);
 
     if (!shouldRespond) {
       if (!isAllowed && mentioned) {
