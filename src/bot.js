@@ -580,8 +580,8 @@ bot.on('photo', async (ctx) => {
   };
   logAndRecord(chatId, logEntry);
 
-  // Smart groups: download immediately
-  if (isSmart) {
+  // Smart/mention groups: only download when @mentioned in caption
+  if (isBotMentioned(ctx)) {
     if (!config.features.download_media) return;
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) {
       console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (photo)`);
@@ -597,7 +597,7 @@ bot.on('photo', async (ctx) => {
         chatType,
         groupName: getGroupName(config, chatId, ctx.chat.title),
         userName,
-        text: caption || '[sent a photo]',
+        text: caption ? replaceBotMention(ctx) : '[sent a photo]',
         contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId),
         quotedContent: getReplyToContext(ctx),
         mediaPath: localPath,
@@ -613,7 +613,7 @@ bot.on('photo', async (ctx) => {
     return;
   }
 
-  // Non-smart groups: logged with metadata, lazy download via context
+  // Not @mentioned: logged with metadata only
   console.log(`[telegram] Photo logged for lazy download in group ${chatId}`);
 });
 
@@ -702,8 +702,8 @@ bot.on('document', async (ctx) => {
   };
   logAndRecord(chatId, logEntry);
 
-  // Smart groups: download immediately
-  if (isSmart) {
+  // Smart/mention groups: only download when @mentioned in caption
+  if (isBotMentioned(ctx)) {
     if (!config.features.download_media) return;
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) {
       console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (document)`);
@@ -719,7 +719,7 @@ bot.on('document', async (ctx) => {
         chatType,
         groupName: getGroupName(config, chatId, ctx.chat.title),
         userName,
-        text: caption || `[sent a file: ${doc.file_name}]`,
+        text: caption ? replaceBotMention(ctx) : `[sent a file: ${doc.file_name}]`,
         contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId),
         quotedContent: getReplyToContext(ctx),
         mediaPath: localPath,
@@ -735,7 +735,7 @@ bot.on('document', async (ctx) => {
     return;
   }
 
-  // Non-smart groups: logged with metadata, lazy download via context
+  // Not @mentioned: logged with metadata only
   console.log(`[telegram] Document logged for lazy download in group ${chatId}`);
 });
 
