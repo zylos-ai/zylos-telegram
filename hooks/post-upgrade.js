@@ -108,6 +108,67 @@ if (fs.existsSync(configPath)) {
       migrations.push('Added message.context_messages');
     }
 
+    // Migration 8: Migrate legacy group arrays to unified groups map
+    if ((config.allowed_groups || config.smart_groups) && !config.groups) {
+      config.groups = {};
+      config.groupPolicy = config.group_whitelist?.enabled !== false ? 'allowlist' : 'open';
+
+      for (const g of (config.allowed_groups || [])) {
+        config.groups[String(g.chat_id)] = {
+          name: g.name,
+          mode: 'mention',
+          allowFrom: ['*'],
+          historyLimit: config.message?.context_messages || 10,
+          added_at: g.added_at || new Date().toISOString()
+        };
+      }
+      for (const g of (config.smart_groups || [])) {
+        config.groups[String(g.chat_id)] = {
+          name: g.name,
+          mode: 'smart',
+          allowFrom: ['*'],
+          historyLimit: config.message?.context_messages || 10,
+          added_at: g.added_at || new Date().toISOString()
+        };
+      }
+
+      // Remove legacy fields
+      delete config.allowed_groups;
+      delete config.smart_groups;
+      delete config.group_whitelist;
+
+      migrated = true;
+      migrations.push(`Migrated ${Object.keys(config.groups).length} groups to unified groups map`);
+    }
+
+    // Migration 9: Ensure groupPolicy exists
+    if (!config.groupPolicy) {
+      config.groupPolicy = 'allowlist';
+      migrated = true;
+      migrations.push('Added groupPolicy (default: allowlist)');
+    }
+
+    // Migration 10: Ensure groups object exists
+    if (!config.groups) {
+      config.groups = {};
+      migrated = true;
+      migrations.push('Added empty groups object');
+    }
+
+    // Migration 11: Ensure internal_port
+    if (!config.internal_port) {
+      config.internal_port = 3460;
+      migrated = true;
+      migrations.push('Added internal_port (3460)');
+    }
+
+    // Migration 12: Create typing directory
+    const typingDir = path.join(DATA_DIR, 'typing');
+    if (!fs.existsSync(typingDir)) {
+      fs.mkdirSync(typingDir, { recursive: true });
+      migrations.push('Created typing/ directory');
+    }
+
     // Save if migrated
     if (migrated) {
       fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
