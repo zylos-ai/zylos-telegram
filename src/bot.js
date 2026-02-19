@@ -646,7 +646,32 @@ bot.on('photo', async (ctx) => {
     return;
   }
 
-  // Not @mentioned: logged with metadata only
+  // Not @mentioned in smart group: forward without downloading
+  if (isSmart) {
+    if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
+
+    const endpoint = buildEndpoint(chatId, { messageId, threadId });
+    const correlationId = `${chatId}:${messageId}`;
+    startTypingIndicator(chatId, correlationId);
+
+    const msg = formatMessage({
+      chatType,
+      groupName: getGroupName(config, chatId, ctx.chat.title),
+      userName,
+      text: caption ? caption : `[sent a photo]\n${photoInfo}`,
+      contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId),
+      quotedContent: getReplyToContext(ctx),
+      mediaPath: null,
+      isThread: !!threadId
+    });
+    sendToC4('telegram', endpoint, msg, (errMsg) => {
+      stopTypingIndicator(correlationId);
+      bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    });
+    return;
+  }
+
+  // Not @mentioned in non-smart group: logged with metadata only
   console.log(`[telegram] Photo logged for lazy download in group ${chatId}`);
 });
 
@@ -767,7 +792,32 @@ bot.on('document', async (ctx) => {
     return;
   }
 
-  // Not @mentioned: logged with metadata only
+  // Not @mentioned in smart group: forward without downloading
+  if (isSmart) {
+    if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
+
+    const endpoint = buildEndpoint(chatId, { messageId, threadId });
+    const correlationId = `${chatId}:${messageId}`;
+    startTypingIndicator(chatId, correlationId);
+
+    const msg = formatMessage({
+      chatType,
+      groupName: getGroupName(config, chatId, ctx.chat.title),
+      userName,
+      text: caption ? caption : `[sent a file: ${doc.file_name}]\n${fileInfo}`,
+      contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId),
+      quotedContent: getReplyToContext(ctx),
+      mediaPath: null,
+      isThread: !!threadId
+    });
+    sendToC4('telegram', endpoint, msg, (errMsg) => {
+      stopTypingIndicator(correlationId);
+      bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    });
+    return;
+  }
+
+  // Not @mentioned in non-smart group: logged with metadata only
   console.log(`[telegram] Document logged for lazy download in group ${chatId}`);
 });
 
