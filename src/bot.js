@@ -413,7 +413,7 @@ bot.on('text', (ctx) => {
     });
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
-      bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+      bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
     });
     return;
   }
@@ -425,7 +425,7 @@ bot.on('text', (ctx) => {
     const mentioned = isBotMentioned(ctx);
     const senderIsOwner = isOwner(config, ctx);
 
-    if (isAllowed || senderIsOwner) {
+    if (isAllowed) {
       logAndRecord(chatId, logEntry);
     }
 
@@ -447,6 +447,11 @@ bot.on('text', (ctx) => {
       return;
     }
 
+    // Log owner messages from non-allowed groups only when responding
+    if (!isAllowed && senderIsOwner) {
+      logAndRecord(chatId, logEntry);
+    }
+
     const historyKey = getHistoryKey(chatId, threadId);
     ensureReplay(String(chatId));
 
@@ -460,6 +465,7 @@ bot.on('text', (ctx) => {
     const correlationId = `${chatId}:${messageId}`;
     startTypingIndicator(chatId, correlationId);
 
+    const sendReplyOpts = threadId ? { message_thread_id: threadId } : {};
     const msg = formatMessage({
       chatType,
       groupName,
@@ -472,7 +478,7 @@ bot.on('text', (ctx) => {
     });
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
-      bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+      bot.telegram.sendMessage(chatId, errMsg, sendReplyOpts).catch(() => {});
     });
   }
 });
@@ -530,7 +536,7 @@ bot.on('photo', async (ctx) => {
       });
       sendToC4('telegram', endpoint, msg, (errMsg) => {
         stopTypingIndicator(correlationId);
-        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+        bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
       ctx.reply('Photo received!');
     } catch (err) {
@@ -587,7 +593,7 @@ bot.on('photo', async (ctx) => {
       });
       sendToC4('telegram', endpoint, msg, (errMsg) => {
         stopTypingIndicator(correlationId);
-        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+        bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
     } catch (err) {
       console.error(`[telegram] Photo download error: ${err.message}`);
@@ -651,7 +657,7 @@ bot.on('document', async (ctx) => {
       });
       sendToC4('telegram', endpoint, msg, (errMsg) => {
         stopTypingIndicator(correlationId);
-        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+        bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
       ctx.reply('File received!');
     } catch (err) {
@@ -707,7 +713,7 @@ bot.on('document', async (ctx) => {
       });
       sendToC4('telegram', endpoint, msg, (errMsg) => {
         stopTypingIndicator(correlationId);
-        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+        bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
     } catch (err) {
       console.error(`[telegram] Document download error: ${err.message}`);
