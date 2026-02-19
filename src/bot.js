@@ -154,15 +154,15 @@ function isBotMentioned(ctx) {
 
 /**
  * Replace bot @mention with bot's display name using entity offsets.
- * If the @mention already matches the bot's display name, leave it as-is.
+ * Handles both text messages (entities) and media captions (caption_entities).
  * Processes in reverse offset order to preserve positions.
  *
  * @param {object} ctx - Telegraf context
  * @returns {string} Text with bot @mentions replaced by display name
  */
 function replaceBotMention(ctx) {
-  let text = ctx.message.text || '';
-  const entities = (ctx.message.entities || [])
+  let text = ctx.message.text || ctx.message.caption || '';
+  const entities = (ctx.message.entities || ctx.message.caption_entities || [])
     .filter(e => e.type === 'mention')
     .sort((a, b) => b.offset - a.offset); // Reverse order
 
@@ -174,8 +174,7 @@ function replaceBotMention(ctx) {
   for (const e of entities) {
     const mentioned = text.slice(e.offset + 1, e.offset + e.length);
     if (mentioned.toLowerCase() === botUsername) {
-      // If @mention already matches display name, leave as-is
-      if (mentioned.toLowerCase() === botName.toLowerCase()) continue;
+      // Replace @handle with display name (removes the @ prefix)
       text = text.slice(0, e.offset) + botName + text.slice(e.offset + e.length);
     }
   }

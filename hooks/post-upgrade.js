@@ -185,4 +185,54 @@ if (fs.existsSync(configPath)) {
   console.log('No config file found, skipping migrations.');
 }
 
+// Log migration: split existing log files by thread_id
+const logsDir = path.join(DATA_DIR, 'logs');
+if (fs.existsSync(logsDir)) {
+  try {
+    const logFiles = fs.readdirSync(logsDir).filter(f => f.endsWith('.log') && !f.includes('_t_'));
+    let splitCount = 0;
+
+    for (const file of logFiles) {
+      const filePath = path.join(logsDir, file);
+      const content = fs.readFileSync(filePath, 'utf-8').trim();
+      if (!content) continue;
+
+      const lines = content.split('\n');
+      const threadLines = new Map(); // threadId -> lines[]
+      const mainLines = [];
+
+      for (const line of lines) {
+        let entry;
+        try { entry = JSON.parse(line); } catch { mainLines.push(line); continue; }
+        if (entry.thread_id) {
+          const tid = String(entry.thread_id);
+          if (!threadLines.has(tid)) threadLines.set(tid, []);
+          threadLines.get(tid).push(line);
+        } else {
+          mainLines.push(line);
+        }
+      }
+
+      if (threadLines.size === 0) continue;
+
+      // Write thread-specific files
+      const baseName = file.replace('.log', '');
+      for (const [tid, tLines] of threadLines) {
+        const threadFile = path.join(logsDir, `${baseName}_t_${tid}.log`);
+        fs.appendFileSync(threadFile, tLines.join('\n') + '\n');
+      }
+
+      // Rewrite main file without thread entries
+      fs.writeFileSync(filePath, mainLines.join('\n') + (mainLines.length ? '\n' : ''));
+      splitCount++;
+    }
+
+    if (splitCount > 0) {
+      console.log(`[post-upgrade] Split thread logs from ${splitCount} files`);
+    }
+  } catch (err) {
+    console.warn(`[post-upgrade] Log split failed (non-fatal): ${err.message}`);
+  }
+}
+
 console.log('\n[post-upgrade] Complete!');
