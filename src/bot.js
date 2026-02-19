@@ -355,6 +355,41 @@ bot.on('new_chat_members', (ctx) => {
 });
 
 /**
+ * Handle bot's own chat member status changes (covers new group creation scenario)
+ */
+bot.on('my_chat_member', (ctx) => {
+  const update = ctx.myChatMember;
+  const oldStatus = update.old_chat_member.status;
+  const newStatus = update.new_chat_member.status;
+
+  // Only handle: bot went from non-member to member/admin
+  const wasMember = ['member', 'administrator', 'creator'].includes(oldStatus);
+  const isMember = ['member', 'administrator', 'creator'].includes(newStatus);
+  if (wasMember || !isMember) return;
+
+  const chat = update.chat;
+  if (chat.type !== 'group' && chat.type !== 'supergroup') return;
+
+  config = loadConfig();
+  const chatId = chat.id;
+  const chatTitle = chat.title || 'Unknown Group';
+  const addedById = String(update.from.id);
+
+  // Skip if group already registered (new_chat_members already handled it)
+  if (config.groups && config.groups[String(chatId)]) return;
+
+  if (String(config.owner?.chat_id) === addedById) {
+    const added = addGroup(config, chatId, chatTitle, 'mention');
+    if (added) {
+      bot.telegram.sendMessage(chatId, `Group added. Members can now @${bot.botInfo?.username} to chat.`).catch(() => {});
+    }
+  } else {
+    bot.telegram.sendMessage(chatId, 'Bot joined, but requires admin approval to respond.').catch(() => {});
+    notifyOwnerPendingGroup(chatId, chatTitle, update.from.username || update.from.first_name || addedById);
+  }
+});
+
+/**
  * Handle /start command
  */
 bot.start((ctx) => {
@@ -809,7 +844,9 @@ bot.catch((err, ctx) => {
 /**
  * Start bot
  */
-bot.launch().then(() => {
+bot.launch({
+  allowedUpdates: ['message', 'edited_message', 'callback_query', 'inline_query', 'my_chat_member']
+}).then(() => {
   console.log('[telegram] zylos-telegram v0.2.0 started');
   console.log(`[telegram] Proxy: ${proxyUrl || 'none'}`);
   console.log(`[telegram] Bot: @${bot.botInfo?.username}`);
