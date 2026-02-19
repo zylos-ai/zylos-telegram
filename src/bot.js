@@ -187,13 +187,15 @@ function replaceBotMention(ctx) {
  *
  * @param {string|number} chatId
  * @param {string} correlationId - Unique per request: `${chatId}:${messageId}`
+ * @param {number|null} threadId - Optional message_thread_id for forum topics
  */
-function startTypingIndicator(chatId, correlationId) {
+function startTypingIndicator(chatId, correlationId, threadId = null) {
+  const opts = threadId ? { message_thread_id: threadId } : {};
   // Immediate first action
-  bot.telegram.sendChatAction(chatId, 'typing').catch(() => {});
+  bot.telegram.sendChatAction(chatId, 'typing', opts).catch(() => {});
 
   const interval = setInterval(() => {
-    bot.telegram.sendChatAction(chatId, 'typing').catch(() => {});
+    bot.telegram.sendChatAction(chatId, 'typing', opts).catch(() => {});
   }, 5000);
 
   activeTypingIndicators.set(correlationId, {
@@ -445,7 +447,7 @@ bot.on('text', (ctx) => {
     const quotedContent = getReplyToContext(ctx);
     const endpoint = buildEndpoint(chatId, { messageId });
     const correlationId = `${chatId}:${messageId}`;
-    startTypingIndicator(chatId, correlationId);
+    startTypingIndicator(chatId, correlationId, threadId);
 
     const msg = formatMessage({
       chatType: 'private',
@@ -507,7 +509,7 @@ bot.on('text', (ctx) => {
 
     const endpoint = buildEndpoint(chatId, { messageId, threadId });
     const correlationId = `${chatId}:${messageId}`;
-    startTypingIndicator(chatId, correlationId);
+    startTypingIndicator(chatId, correlationId, threadId);
 
     const sendReplyOpts = threadId ? { message_thread_id: threadId } : {};
     const msg = formatMessage({
@@ -568,7 +570,7 @@ bot.on('photo', async (ctx) => {
       const localPath = await downloadPhoto(ctx);
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
       const correlationId = `${chatId}:${messageId}`;
-      startTypingIndicator(chatId, correlationId);
+      startTypingIndicator(chatId, correlationId, threadId);
 
       const msg = formatMessage({
         chatType: 'private',
@@ -624,7 +626,7 @@ bot.on('photo', async (ctx) => {
       const localPath = await downloadPhoto(ctx);
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
       const correlationId = `${chatId}:${messageId}`;
-      startTypingIndicator(chatId, correlationId);
+      startTypingIndicator(chatId, correlationId, threadId);
 
       const msg = formatMessage({
         chatType,
@@ -652,7 +654,7 @@ bot.on('photo', async (ctx) => {
 
     const endpoint = buildEndpoint(chatId, { messageId, threadId });
     const correlationId = `${chatId}:${messageId}`;
-    startTypingIndicator(chatId, correlationId);
+    startTypingIndicator(chatId, correlationId, threadId);
 
     const msg = formatMessage({
       chatType,
@@ -715,7 +717,7 @@ bot.on('document', async (ctx) => {
       const localPath = await downloadDocument(ctx);
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
       const correlationId = `${chatId}:${messageId}`;
-      startTypingIndicator(chatId, correlationId);
+      startTypingIndicator(chatId, correlationId, threadId);
 
       const msg = formatMessage({
         chatType: 'private',
@@ -770,7 +772,7 @@ bot.on('document', async (ctx) => {
       const localPath = await downloadDocument(ctx);
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
       const correlationId = `${chatId}:${messageId}`;
-      startTypingIndicator(chatId, correlationId);
+      startTypingIndicator(chatId, correlationId, threadId);
 
       const msg = formatMessage({
         chatType,
@@ -798,7 +800,7 @@ bot.on('document', async (ctx) => {
 
     const endpoint = buildEndpoint(chatId, { messageId, threadId });
     const correlationId = `${chatId}:${messageId}`;
-    startTypingIndicator(chatId, correlationId);
+    startTypingIndicator(chatId, correlationId, threadId);
 
     const msg = formatMessage({
       chatType,
