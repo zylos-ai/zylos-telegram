@@ -447,6 +447,11 @@ bot.on('text', (ctx) => {
     const quotedContent = getReplyToContext(ctx);
     const endpoint = buildEndpoint(chatId, { messageId });
     const correlationId = `${chatId}:${messageId}`;
+    bot.telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+    }).catch(() => {});
     startTypingIndicator(chatId, correlationId, threadId);
 
     const msg = formatMessage({
@@ -581,6 +586,11 @@ bot.on('photo', async (ctx) => {
       const localPath = await downloadPhoto(ctx);
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
       const correlationId = `${chatId}:${messageId}`;
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+      }).catch(() => {});
       startTypingIndicator(chatId, correlationId, threadId);
 
       const msg = formatMessage({
@@ -739,6 +749,11 @@ bot.on('document', async (ctx) => {
       const localPath = await downloadDocument(ctx);
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
       const correlationId = `${chatId}:${messageId}`;
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+      }).catch(() => {});
       startTypingIndicator(chatId, correlationId, threadId);
 
       const msg = formatMessage({
