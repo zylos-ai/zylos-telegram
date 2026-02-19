@@ -153,13 +153,14 @@ function isBotMentioned(ctx) {
 }
 
 /**
- * Strip bot @mention from text using entity offsets (precise, not regex).
+ * Replace bot @mention with bot's display name using entity offsets.
+ * If the @mention already matches the bot's display name, leave it as-is.
  * Processes in reverse offset order to preserve positions.
  *
  * @param {object} ctx - Telegraf context
- * @returns {string} Text with bot mentions removed
+ * @returns {string} Text with bot @mentions replaced by display name
  */
-function stripBotMention(ctx) {
+function replaceBotMention(ctx) {
   let text = ctx.message.text || '';
   const entities = (ctx.message.entities || [])
     .filter(e => e.type === 'mention')
@@ -168,10 +169,14 @@ function stripBotMention(ctx) {
   const botUsername = bot.botInfo?.username?.toLowerCase();
   if (!botUsername) return text;
 
+  const botName = bot.botInfo?.first_name || botUsername;
+
   for (const e of entities) {
     const mentioned = text.slice(e.offset + 1, e.offset + e.length);
     if (mentioned.toLowerCase() === botUsername) {
-      text = text.slice(0, e.offset) + text.slice(e.offset + e.length);
+      // If @mention already matches display name, leave as-is
+      if (mentioned.toLowerCase() === botName.toLowerCase()) continue;
+      text = text.slice(0, e.offset) + botName + text.slice(e.offset + e.length);
     }
   }
   return text.trim();
@@ -464,7 +469,7 @@ bot.on('text', (ctx) => {
     const quotedContent = getReplyToContext(ctx);
     const groupName = getGroupName(config, chatId, ctx.chat.title);
 
-    const cleanText = mentioned ? stripBotMention(ctx) : ctx.message.text;
+    const cleanText = mentioned ? replaceBotMention(ctx) : ctx.message.text;
 
     const endpoint = buildEndpoint(chatId, { messageId, threadId });
     const correlationId = `${chatId}:${messageId}`;
