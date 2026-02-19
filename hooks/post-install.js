@@ -34,8 +34,10 @@ console.log('[post-install] Running telegram-specific setup...\n');
 console.log('Creating subdirectories...');
 fs.mkdirSync(path.join(DATA_DIR, 'media'), { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'logs'), { recursive: true });
+fs.mkdirSync(path.join(DATA_DIR, 'typing'), { recursive: true });
 console.log('  - media/');
 console.log('  - logs/');
+console.log('  - typing/');
 
 // 2. Create default config if not exists
 const configPath = path.join(DATA_DIR, 'config.json');
