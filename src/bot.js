@@ -511,14 +511,13 @@ bot.on('text', (ctx) => {
     const correlationId = `${chatId}:${messageId}`;
     const smartNoMention = isSmart && !mentioned;
 
-    // Smart mode without @mention: eyes reaction instead of typing
-    if (smartNoMention) {
-      bot.telegram.callApi('setMessageReaction', {
-        chat_id: chatId,
-        message_id: messageId,
-        reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
-      }).catch(() => {});
-    } else {
+    // Eyes reaction for all group messages; typing only when @mentioned
+    bot.telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+    }).catch(() => {});
+    if (!smartNoMention) {
       startTypingIndicator(chatId, correlationId, threadId);
     }
 
@@ -638,6 +637,11 @@ bot.on('photo', async (ctx) => {
       const localPath = await downloadPhoto(ctx);
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
       const correlationId = `${chatId}:${messageId}`;
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+      }).catch(() => {});
       startTypingIndicator(chatId, correlationId, threadId);
 
       const msg = formatMessage({
@@ -790,6 +794,11 @@ bot.on('document', async (ctx) => {
       const localPath = await downloadDocument(ctx);
       const endpoint = buildEndpoint(chatId, { messageId, threadId });
       const correlationId = `${chatId}:${messageId}`;
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+      }).catch(() => {});
       startTypingIndicator(chatId, correlationId, threadId);
 
       const msg = formatMessage({
