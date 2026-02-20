@@ -42,11 +42,14 @@ export function loadConfig() {
 }
 
 export function saveConfig(config) {
+  const tmp = CONFIG_PATH + '.tmp';
   try {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+    fs.writeFileSync(tmp, JSON.stringify(config, null, 2));
+    fs.renameSync(tmp, CONFIG_PATH);
     return true;
   } catch (err) {
     console.error('[telegram] Failed to save config:', err.message);
+    try { fs.unlinkSync(tmp); } catch {}
     return false;
   }
 }

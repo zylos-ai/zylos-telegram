@@ -147,7 +147,11 @@ export function logAndRecord(chatId, entry) {
 
   // File log (audit) — per historyKey
   const logFile = path.join(LOGS_DIR, historyKeyToLogFile(hk));
-  fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
+  try {
+    fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
+  } catch (err) {
+    console.error(`[telegram] Log write failed for ${hk}: ${err.message}`);
+  }
 
   // In-memory history
   recordHistoryEntry(hk, entry);

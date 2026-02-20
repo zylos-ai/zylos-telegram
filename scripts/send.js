@@ -9,7 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import dotenv from 'dotenv';
 import { parseEndpoint } from '../src/lib/utils.js';
 import { DATA_DIR, loadConfig } from '../src/lib/config.js';
@@ -61,28 +61,28 @@ function sleep(ms) {
 function apiRequest(method, params) {
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/${method}`;
 
-  let curlCmd;
+  let result;
   if (params.photo || params.document) {
     const filePath = params.photo || params.document;
     const fieldName = params.photo ? 'photo' : 'document';
-    const escapedPath = filePath.replace(/"/g, '\\"');
-    curlCmd = `curl -s -X POST "${url}" -F "chat_id=${params.chat_id}" -F "${fieldName}=@${escapedPath}"`;
+    const args = ['-s', '--max-time', '30', '-X', 'POST'];
+    if (PROXY_URL) args.push('--proxy', PROXY_URL);
+    args.push(url, '-F', `chat_id=${params.chat_id}`, '-F', `${fieldName}=@${filePath}`);
     if (params.reply_to_message_id) {
-      curlCmd += ` -F "reply_to_message_id=${params.reply_to_message_id}"`;
+      args.push('-F', `reply_to_message_id=${params.reply_to_message_id}`);
     }
     if (params.message_thread_id) {
-      curlCmd += ` -F "message_thread_id=${params.message_thread_id}"`;
+      args.push('-F', `message_thread_id=${params.message_thread_id}`);
     }
+    result = execFileSync('curl', args, { encoding: 'utf8', timeout: 35000 });
   } else {
     const jsonData = JSON.stringify(params);
-    curlCmd = `curl -s -X POST "${url}" -H "Content-Type: application/json" -d '${jsonData.replace(/'/g, "'\\''")}'`;
+    let curlCmd = `curl -s --max-time 30 -X POST "${url}" -H "Content-Type: application/json" -d '${jsonData.replace(/'/g, "'\\''")}'`;
+    if (PROXY_URL) {
+      curlCmd = curlCmd.replace('curl ', `curl --proxy "${PROXY_URL}" `);
+    }
+    result = execSync(curlCmd, { encoding: 'utf8', timeout: 35000 });
   }
-
-  if (PROXY_URL) {
-    curlCmd = curlCmd.replace('curl ', `curl --proxy "${PROXY_URL}" `);
-  }
-
-  const result = execSync(curlCmd, { encoding: 'utf8' });
   const response = JSON.parse(result);
   if (response.ok) return response.result;
 

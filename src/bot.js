@@ -250,6 +250,10 @@ try {
       handleTypingDoneFile(filename);
     }
   });
+  typingWatcher.on('error', (err) => {
+    console.warn(`[telegram] typingWatcher error: ${err.message}`);
+    typingWatcher = null;
+  });
 } catch (err) {
   console.warn(`[telegram] fs.watch on typing/ failed: ${err.message}, relying on fallback poll`);
 }
@@ -977,6 +981,9 @@ bot.launch({
   console.log('[telegram] zylos-telegram v0.2.0 started');
   console.log(`[telegram] Proxy: ${proxyUrl || 'none'}`);
   console.log(`[telegram] Bot: @${bot.botInfo?.username}`);
+}).catch((err) => {
+  console.error('[telegram] Failed to start bot:', err.message);
+  process.exit(1);
 });
 
 // Graceful shutdown
