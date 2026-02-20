@@ -88,7 +88,7 @@ function clearReaction(chatId, messageId) {
   bot.telegram.callApi('setMessageReaction', {
     chat_id: chatId,
     message_id: messageId,
-    reaction: JSON.stringify([])
+    reaction: []
   }).catch(() => {});
 }
 
@@ -471,7 +471,7 @@ bot.on('text', (ctx) => {
     bot.telegram.callApi('setMessageReaction', {
       chat_id: chatId,
       message_id: messageId,
-      reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+      reaction: [{ type: 'emoji', emoji: '👀' }]
     }).catch(() => {});
     startTypingIndicator(chatId, correlationId, threadId);
 
@@ -542,7 +542,7 @@ bot.on('text', (ctx) => {
     bot.telegram.callApi('setMessageReaction', {
       chat_id: chatId,
       message_id: messageId,
-      reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+      reaction: [{ type: 'emoji', emoji: '👀' }]
     }).catch(() => {});
     if (!smartNoMention) {
       startTypingIndicator(chatId, correlationId, threadId);
@@ -612,7 +612,7 @@ bot.on('photo', async (ctx) => {
       bot.telegram.callApi('setMessageReaction', {
         chat_id: chatId,
         message_id: messageId,
-        reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+        reaction: [{ type: 'emoji', emoji: '👀' }]
       }).catch(() => {});
       startTypingIndicator(chatId, correlationId, threadId);
 
@@ -677,7 +677,7 @@ bot.on('photo', async (ctx) => {
       bot.telegram.callApi('setMessageReaction', {
         chat_id: chatId,
         message_id: messageId,
-        reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+        reaction: [{ type: 'emoji', emoji: '👀' }]
       }).catch(() => {});
       startTypingIndicator(chatId, correlationId, threadId);
 
@@ -712,7 +712,7 @@ bot.on('photo', async (ctx) => {
     bot.telegram.callApi('setMessageReaction', {
       chat_id: chatId,
       message_id: messageId,
-      reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+      reaction: [{ type: 'emoji', emoji: '👀' }]
     }).catch(() => {});
 
     const msg = formatMessage({
@@ -781,7 +781,7 @@ bot.on('document', async (ctx) => {
       bot.telegram.callApi('setMessageReaction', {
         chat_id: chatId,
         message_id: messageId,
-        reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+        reaction: [{ type: 'emoji', emoji: '👀' }]
       }).catch(() => {});
       startTypingIndicator(chatId, correlationId, threadId);
 
@@ -845,7 +845,7 @@ bot.on('document', async (ctx) => {
       bot.telegram.callApi('setMessageReaction', {
         chat_id: chatId,
         message_id: messageId,
-        reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+        reaction: [{ type: 'emoji', emoji: '👀' }]
       }).catch(() => {});
       startTypingIndicator(chatId, correlationId, threadId);
 
@@ -880,7 +880,7 @@ bot.on('document', async (ctx) => {
     bot.telegram.callApi('setMessageReaction', {
       chat_id: chatId,
       message_id: messageId,
-      reaction: JSON.stringify([{ type: 'emoji', emoji: '👀' }])
+      reaction: [{ type: 'emoji', emoji: '👀' }]
     }).catch(() => {});
 
     const msg = formatMessage({

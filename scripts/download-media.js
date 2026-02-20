@@ -9,7 +9,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import dotenv from 'dotenv';
 
 const HOME = process.env.HOME;
@@ -35,10 +35,11 @@ fs.mkdirSync(MEDIA_DIR, { recursive: true });
 try {
   // Step 1: Get file info from Telegram API
   const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`;
-  let curlCmd = `curl -s --max-time 30 "${apiUrl}"`;
-  if (PROXY_URL) curlCmd = `curl -s --max-time 30 --proxy "${PROXY_URL}" "${apiUrl}"`;
+  const apiArgs = ['-s', '--fail', '--max-time', '30'];
+  if (PROXY_URL) apiArgs.push('--proxy', PROXY_URL);
+  apiArgs.push(apiUrl);
 
-  const response = JSON.parse(execSync(curlCmd, { encoding: 'utf8', timeout: 35000 }));
+  const response = JSON.parse(execFileSync('curl', apiArgs, { encoding: 'utf8', timeout: 35000 }));
 
   if (!response.ok) {
     console.error(`Telegram API error: ${response.description || 'unknown error'}`);
@@ -53,10 +54,11 @@ try {
 
   // Step 2: Download the file
   const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-  let dlCmd = `curl -s --max-time 120 -o "${localPath}" "${fileUrl}"`;
-  if (PROXY_URL) dlCmd = `curl -s --max-time 120 --proxy "${PROXY_URL}" -o "${localPath}" "${fileUrl}"`;
+  const dlArgs = ['-s', '--fail', '--max-time', '120', '-o', localPath];
+  if (PROXY_URL) dlArgs.push('--proxy', PROXY_URL);
+  dlArgs.push(fileUrl);
 
-  execSync(dlCmd, { timeout: 125000 });
+  execFileSync('curl', dlArgs, { timeout: 125000 });
 
   const stats = fs.statSync(localPath);
   console.log(localPath);

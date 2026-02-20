@@ -349,6 +349,7 @@ async function main() {
     console.log('Message sent successfully');
 
   } catch (err) {
+    markTypingDone();
     console.error(`Error: ${err.message}`);
     process.exit(1);
   }

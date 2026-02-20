@@ -187,7 +187,7 @@ export function formatMessage(opts) {
   if (chatType === 'private') {
     prefix = '[TG DM]';
   } else {
-    prefix = `[TG GROUP:${groupName || 'group'}]`;
+    prefix = `[TG GROUP:${escapeXml(groupName || 'group')}]`;
   }
 
   const parts = [`${prefix} ${escapeXml(userName)} said: `];

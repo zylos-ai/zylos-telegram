@@ -48,7 +48,7 @@ export async function downloadFile(ctx, fileId, prefix = 'file') {
 
   // Download using curl (supports proxy), with timeout
   return new Promise((resolve, reject) => {
-    const args = ['-s', '--max-time', '30', '-o', localPath];
+    const args = ['-s', '--fail', '--max-time', '30', '-o', localPath];
     if (proxyUrl) {
       args.push('--proxy', proxyUrl);
     }
