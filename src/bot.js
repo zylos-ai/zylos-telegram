@@ -5,19 +5,35 @@
 
 import { Telegraf } from 'telegraf';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { exec, execSync } from 'child_process';
+import { exec, execFile } from 'child_process';
+import http from 'http';
+import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
-import { loadConfig, getEnv } from './lib/config.js';
-import { hasOwner, bindOwner, isAuthorized, isAllowedGroup, addAllowedGroup, isSmartGroup } from './lib/auth.js';
+import { loadConfig, getEnv, DATA_DIR } from './lib/config.js';
+import { getHistoryKey } from './lib/utils.js';
+import {
+  hasOwner, bindOwner, isAuthorized, isOwner,
+  isGroupAllowed, isSmartGroup, isSenderAllowed,
+  getGroupName, addGroup
+} from './lib/auth.js';
 import { downloadPhoto, downloadDocument } from './lib/media.js';
-import { logMessage, getGroupContext, updateCursor, formatContextPrefix } from './lib/context.js';
+import {
+  logAndRecord, ensureReplay, getHistory,
+  formatMessage
+} from './lib/context.js';
+import {
+  resolveUserName,
+  loadUserCache,
+  startPersistInterval,
+  persistUserCache
+} from './lib/user-cache.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load config
 let config = loadConfig();
 
 // Setup bot with optional proxy
@@ -39,8 +55,18 @@ if (proxyUrl) {
 
 const bot = new Telegraf(botToken, botOptions);
 
-// C4 receive interface path
 const C4_RECEIVE = path.join(process.env.HOME, 'zylos/.claude/skills/comm-bridge/scripts/c4-receive.js');
+
+// Typing indicator state
+const TYPING_DIR = path.join(DATA_DIR, 'typing');
+fs.mkdirSync(TYPING_DIR, { recursive: true });
+
+/** @type {Map<string, { interval: NodeJS.Timeout, startedAt: number }>} */
+const activeTypingIndicators = new Map();
+
+// User cache init
+loadUserCache();
+const cachePersistInterval = startPersistInterval();
 
 /**
  * Parse c4-receive JSON response from stdout.
@@ -56,9 +82,20 @@ function parseC4Response(stdout) {
 }
 
 /**
+ * Remove eyes reaction from a message (best-effort, fire-and-forget).
+ */
+function clearReaction(chatId, messageId) {
+  bot.telegram.callApi('setMessageReaction', {
+    chat_id: chatId,
+    message_id: messageId,
+    reaction: []
+  }).catch(() => {});
+}
+
+/**
  * Send message to Claude via C4
  * @param {string} source - Channel name
- * @param {string} endpoint - Endpoint ID (chat ID)
+ * @param {string} endpoint - Endpoint ID
  * @param {string} content - Message content
  * @param {function} [onReject] - Callback with error message when c4-receive rejects
  */
@@ -71,32 +108,33 @@ function sendToC4(source, endpoint, content, onReject) {
 
   const cmd = `node "${C4_RECEIVE}" --channel "${source}" --endpoint "${endpoint}" --json --content '${safeContent}'`;
 
-  exec(cmd, { encoding: 'utf8' }, (error, stdout) => {
+  exec(cmd, { encoding: 'utf8', timeout: 30000 }, (error, stdout) => {
     if (!error) {
       console.log(`[telegram] Sent to C4: ${content.substring(0, 50)}...`);
       return;
     }
-    // Non-zero exit — check if c4-receive returned a structured rejection
-    const response = parseC4Response(error.stdout || stdout);
+    // Non-zero exit - check if c4-receive returned a structured rejection
+    const response = parseC4Response(stdout);
     if (response && response.ok === false && response.error?.message) {
       console.warn(`[telegram] C4 rejected (${response.error.code}): ${response.error.message}`);
       if (onReject) onReject(response.error.message);
       return;
     }
-    // Unexpected failure (node crash, etc.) — retry once
+    // Unexpected failure (node crash, etc.) - retry once
     console.warn(`[telegram] C4 send failed, retrying in 2s: ${error.message}`);
     setTimeout(() => {
-      exec(cmd, { encoding: 'utf8' }, (retryError, retryStdout) => {
+      exec(cmd, { encoding: 'utf8', timeout: 30000 }, (retryError, retryStdout) => {
         if (!retryError) {
           console.log(`[telegram] Sent to C4 (retry): ${content.substring(0, 50)}...`);
           return;
         }
-        const retryResponse = parseC4Response(retryError.stdout || retryStdout);
+        const retryResponse = parseC4Response(retryStdout);
         if (retryResponse && retryResponse.ok === false && retryResponse.error?.message) {
           console.error(`[telegram] C4 rejected after retry (${retryResponse.error.code}): ${retryResponse.error.message}`);
           if (onReject) onReject(retryResponse.error.message);
         } else {
           console.error(`[telegram] C4 send failed after retry: ${retryError.message}`);
+          if (onReject) onReject('Internal error, please try again.');
         }
       });
     }, 2000);
@@ -104,45 +142,190 @@ function sendToC4(source, endpoint, content, onReject) {
 }
 
 /**
- * Format message for C4
+ * Check if the bot is @mentioned using Telegram entities API.
+ * Replaces fragile string.includes() check.
+ *
+ * @param {object} ctx - Telegraf context
+ * @returns {boolean}
  */
-function formatMessage(ctx, text, mediaPath = null, contextPrefix = '') {
-  const chatType = ctx.chat.type; // 'private', 'group', 'supergroup'
-  const username = ctx.from.username || ctx.from.first_name || 'unknown';
-  const chatId = ctx.chat.id;
+function isBotMentioned(ctx) {
+  const entities = ctx.message.entities || ctx.message.caption_entities || [];
+  const text = ctx.message.text || ctx.message.caption || '';
+  const botUsername = bot.botInfo?.username?.toLowerCase();
+  if (!botUsername) return false;
 
-  let prefix;
-  if (chatType === 'private') {
-    prefix = `[TG DM]`;
-  } else {
-    const groupName = getGroupName(config, chatId, ctx.chat.title);
-    prefix = `[TG GROUP:${groupName}]`;
-  }
-
-  let message = `${prefix} ${username} said: ${contextPrefix}${text}`;
-
-  if (mediaPath) {
-    message += ` ---- file: ${mediaPath}`;
-  }
-
-  return message;
+  return entities.some(e => {
+    if (e.type === 'mention') {
+      const mentioned = text.slice(e.offset + 1, e.offset + e.length);
+      return mentioned.toLowerCase() === botUsername;
+    }
+    return false;
+  });
 }
 
 /**
- * Get group name from allowed_groups or smart_groups or chat title
+ * Replace bot @mention with bot's display name using entity offsets.
+ * Handles both text messages (entities) and media captions (caption_entities).
+ * Processes in reverse offset order to preserve positions.
+ *
+ * @param {object} ctx - Telegraf context
+ * @returns {string} Text with bot @mentions replaced by display name
  */
-function getGroupName(config, chatId, chatTitle) {
-  chatId = String(chatId);
+function replaceBotMention(ctx) {
+  let text = ctx.message.text || ctx.message.caption || '';
+  const entities = (ctx.message.entities || ctx.message.caption_entities || [])
+    .filter(e => e.type === 'mention')
+    .sort((a, b) => b.offset - a.offset); // Reverse order
 
-  // Check smart_groups first
-  const smartGroup = config.smart_groups?.find(g => String(g.chat_id) === chatId);
-  if (smartGroup) return smartGroup.name;
+  const botUsername = bot.botInfo?.username?.toLowerCase();
+  if (!botUsername) return text;
 
-  // Check allowed_groups
-  const allowedGroup = config.allowed_groups?.find(g => String(g.chat_id) === chatId);
-  if (allowedGroup) return allowedGroup.name;
+  const botName = bot.botInfo?.first_name || botUsername;
 
-  return chatTitle || 'group';
+  for (const e of entities) {
+    const mentioned = text.slice(e.offset + 1, e.offset + e.length);
+    if (mentioned.toLowerCase() === botUsername) {
+      // Replace @handle with @displayName (keep the @ prefix)
+      text = text.slice(0, e.offset) + '@' + botName + text.slice(e.offset + e.length);
+    }
+  }
+  return text.trim();
+}
+
+/**
+ * Start typing indicator for a chat.
+ * Sends sendChatAction('typing') immediately and every 5 seconds.
+ *
+ * @param {string|number} chatId
+ * @param {string} correlationId - Unique per request: `${chatId}:${messageId}`
+ * @param {number|null} threadId - Optional message_thread_id for forum topics
+ */
+function startTypingIndicator(chatId, correlationId, threadId = null) {
+  const opts = threadId ? { message_thread_id: threadId } : {};
+  // Immediate first action
+  bot.telegram.sendChatAction(chatId, 'typing', opts).catch(() => {});
+
+  const interval = setInterval(() => {
+    bot.telegram.sendChatAction(chatId, 'typing', opts).catch(() => {});
+  }, 5000);
+
+  const [typChatId, typMsgId] = correlationId.split(':');
+  activeTypingIndicators.set(correlationId, {
+    interval,
+    startedAt: Date.now(),
+    chatId: Number(typChatId),
+    messageId: Number(typMsgId)
+  });
+}
+
+/**
+ * Stop typing indicator by correlation ID.
+ *
+ * @param {string} correlationId
+ */
+function stopTypingIndicator(correlationId) {
+  const state = activeTypingIndicators.get(correlationId);
+  if (!state) return;
+  clearInterval(state.interval);
+  activeTypingIndicators.delete(correlationId);
+}
+
+/**
+ * Handle a .done marker file: stop the typing indicator and delete the file.
+ */
+function handleTypingDoneFile(filename) {
+  if (!filename || !filename.endsWith('.done')) return;
+  const correlationId = filename.replace('.done', '');
+  const filePath = path.join(TYPING_DIR, filename);
+
+  if (activeTypingIndicators.has(correlationId)) {
+    stopTypingIndicator(correlationId);
+    console.log(`[telegram] Typing stopped for ${correlationId} (reply sent)`);
+  }
+  try { fs.unlinkSync(filePath); } catch {}
+}
+
+// Watch typing directory for done markers (event-driven)
+let typingWatcher = null;
+try {
+  typingWatcher = fs.watch(TYPING_DIR, (eventType, filename) => {
+    if (eventType === 'rename' && filename) {
+      handleTypingDoneFile(filename);
+    }
+  });
+  typingWatcher.on('error', (err) => {
+    console.warn(`[telegram] typingWatcher error: ${err.message}`);
+    typingWatcher = null;
+  });
+} catch (err) {
+  console.warn(`[telegram] fs.watch on typing/ failed: ${err.message}, relying on fallback poll`);
+}
+
+// Fallback poll every 30s (belt and suspenders for missed inotify events)
+const typingPollInterval = setInterval(() => {
+  try {
+    const files = fs.readdirSync(TYPING_DIR);
+    for (const f of files) {
+      handleTypingDoneFile(f);
+    }
+  } catch {}
+
+  // Auto-timeout: sweep indicators older than 120s
+  const now = Date.now();
+  for (const [id, state] of activeTypingIndicators) {
+    if (now - state.startedAt > 120000) {
+      if (state.chatId && state.messageId) {
+        clearReaction(state.chatId, state.messageId);
+      }
+      stopTypingIndicator(id);
+      console.log(`[telegram] Typing auto-timeout for ${id}`);
+    }
+  }
+}, 30000);
+
+// Clean up stale .done files from previous run
+try {
+  const staleFiles = fs.readdirSync(TYPING_DIR);
+  for (const f of staleFiles) {
+    try { fs.unlinkSync(path.join(TYPING_DIR, f)); } catch {}
+  }
+  if (staleFiles.length > 0) {
+    console.log(`[telegram] Cleaned ${staleFiles.length} stale typing markers`);
+  }
+} catch {}
+
+/**
+ * Extract reply-to context from ctx.message.reply_to_message.
+ * No API call needed - Telegram delivers it in the update payload.
+ *
+ * @param {object} ctx
+ * @returns {{ sender: string, text: string }|null}
+ */
+function getReplyToContext(ctx) {
+  if (!ctx.message.reply_to_message) return null;
+  const reply = ctx.message.reply_to_message;
+  return {
+    sender: reply.from?.username || reply.from?.first_name || 'unknown',
+    text: reply.text || reply.caption || '[media]'
+  };
+}
+
+/**
+ * Build structured endpoint string for C4.
+ *
+ * @param {string|number} chatId
+ * @param {object} [opts]
+ * @param {number} [opts.messageId] - Trigger message ID
+ * @param {number|string} [opts.threadId] - Topic thread ID
+ * @returns {string} e.g. "12345|msg:67890|req:12345:67890|thread:111"
+ */
+function buildEndpoint(chatId, { messageId, threadId } = {}) {
+  let endpoint = String(chatId);
+  const correlationId = messageId ? `${chatId}:${messageId}` : null;
+  if (messageId) endpoint += `|msg:${messageId}`;
+  if (correlationId) endpoint += `|req:${correlationId}`;
+  if (threadId) endpoint += `|thread:${threadId}`;
+  return endpoint;
 }
 
 /**
@@ -152,21 +335,20 @@ function notifyOwnerPendingGroup(chatId, chatTitle, addedBy) {
   if (!config.owner?.chat_id) return;
 
   const adminPath = path.join(__dirname, 'admin.js');
-  const message = `[System] Bot was added to a group, pending approval:
-Group: ${chatTitle}
-ID: ${chatId}
-Added by: ${addedBy}
-
-To approve, run:
-node "${adminPath}" add-allowed-group "${chatId}" "${chatTitle}"`;
+  const safeTitle = JSON.stringify(chatTitle || 'group');
+  const message = `[System] Bot was added to a group, pending approval:\nGroup: ${chatTitle}\nID: ${chatId}\nAdded by: ${addedBy}\n\nTo approve, run:\nnode "${adminPath}" add-group "${chatId}" ${safeTitle} mention`;
 
   const sendPath = path.join(__dirname, '..', 'scripts', 'send.js');
-  try {
-    execSync(`node "${sendPath}" "${config.owner.chat_id}" '${message.replace(/'/g, "'\\''")}'`);
-    console.log(`[telegram] Notified owner about pending group: ${chatTitle}`);
-  } catch (err) {
-    console.error(`[telegram] Failed to notify owner: ${err.message}`);
-  }
+  // Use async execFile to avoid deadlock: send.js calls recordOutgoing()
+  // which POSTs back to this process's internal HTTP server.
+  // execFileSync would block the event loop, preventing the response.
+  execFile('node', [sendPath, config.owner.chat_id, message], { encoding: 'utf8', timeout: 35000 }, (err) => {
+    if (err) {
+      console.error(`[telegram] Failed to notify owner: ${err.message}`);
+    } else {
+      console.log(`[telegram] Notified owner about pending group: ${chatTitle}`);
+    }
+  });
 }
 
 /**
@@ -174,36 +356,60 @@ node "${adminPath}" add-allowed-group "${chatId}" "${chatTitle}"`;
  */
 bot.on('new_chat_members', (ctx) => {
   config = loadConfig();
-
   const newMembers = ctx.message.new_chat_members;
   const botId = bot.botInfo?.id;
-
-  // Check if bot was added
   const botWasAdded = newMembers.some(member => member.id === botId);
   if (!botWasAdded) return;
 
   const chatId = ctx.chat.id;
   const chatTitle = ctx.chat.title || 'Unknown Group';
-  const addedBy = ctx.from.username || ctx.from.first_name || String(ctx.from.id);
   const addedById = String(ctx.from.id);
 
-  console.log(`[telegram] Added to group: ${chatTitle} (${chatId}) by ${addedBy}`);
-
-  // Check if adder is owner
-  if (config.owner?.chat_id === addedById) {
-    // Owner added bot - auto approve
-    const added = addAllowedGroup(config, chatId, chatTitle);
+  if (String(config.owner?.chat_id) === addedById) {
+    const added = addGroup(config, chatId, chatTitle, 'mention');
     if (added) {
-      ctx.reply(`Group added to whitelist. Members can now @${bot.botInfo?.username} to chat.`);
-      console.log(`[telegram] Auto-approved group (owner added): ${chatTitle}`);
+      ctx.reply(`Group added. Members can now @${bot.botInfo?.username} to chat.`).catch(() => {});
     } else {
-      ctx.reply(`Group is already in whitelist.`);
+      ctx.reply('Group is already configured.').catch(() => {});
     }
   } else {
-    // Non-owner added bot - need approval
-    ctx.reply(`Bot joined, but requires admin approval to respond.`);
-    notifyOwnerPendingGroup(chatId, chatTitle, addedBy);
-    console.log(`[telegram] Group pending approval: ${chatTitle}`);
+    ctx.reply('Bot joined, but requires admin approval to respond.').catch(() => {});
+    notifyOwnerPendingGroup(chatId, chatTitle, ctx.from.username || ctx.from.first_name || addedById);
+  }
+});
+
+/**
+ * Handle bot's own chat member status changes (covers new group creation scenario)
+ */
+bot.on('my_chat_member', (ctx) => {
+  const update = ctx.myChatMember;
+  const oldStatus = update.old_chat_member.status;
+  const newStatus = update.new_chat_member.status;
+
+  // Only handle: bot went from non-member to member/admin
+  const wasMember = ['member', 'administrator', 'creator'].includes(oldStatus);
+  const isMember = ['member', 'administrator', 'creator'].includes(newStatus);
+  if (wasMember || !isMember) return;
+
+  const chat = update.chat;
+  if (chat.type !== 'group' && chat.type !== 'supergroup') return;
+
+  config = loadConfig();
+  const chatId = chat.id;
+  const chatTitle = chat.title || 'Unknown Group';
+  const addedById = String(update.from.id);
+
+  // Skip if group already registered (new_chat_members already handled it)
+  if (config.groups && config.groups[String(chatId)]) return;
+
+  if (String(config.owner?.chat_id) === addedById) {
+    const added = addGroup(config, chatId, chatTitle, 'mention');
+    if (added) {
+      bot.telegram.sendMessage(chatId, `Group added. Members can now @${bot.botInfo?.username} to chat.`).catch(() => {});
+    }
+  } else {
+    bot.telegram.sendMessage(chatId, 'Bot joined, but requires admin approval to respond.').catch(() => {});
+    notifyOwnerPendingGroup(chatId, chatTitle, update.from.username || update.from.first_name || addedById);
   }
 });
 
@@ -211,118 +417,155 @@ bot.on('new_chat_members', (ctx) => {
  * Handle /start command
  */
 bot.start((ctx) => {
-  // Reload config
   config = loadConfig();
 
-  // Check if owner needs to be bound
   if (!hasOwner(config)) {
     bindOwner(config, ctx);
-    ctx.reply('You are now the admin of this bot.');
+    ctx.reply('You are now the admin of this bot.').catch(() => {});
     console.log(`[telegram] New owner: ${ctx.from.username || ctx.chat.id}`);
     return;
   }
 
-  // Check authorization
   if (!isAuthorized(config, ctx)) {
-    ctx.reply('Sorry, this bot is private.');
+    ctx.reply('Sorry, this bot is private.').catch(() => {});
     console.log(`[telegram] Unauthorized /start: ${ctx.from.username || ctx.chat.id}`);
     return;
   }
 
-  ctx.reply('Bot is ready. Send me a message!');
+  ctx.reply('Bot is ready. Send me a message!').catch(() => {});
 });
 
 /**
  * Handle text messages
  */
 bot.on('text', (ctx) => {
-  // Skip commands
   if (ctx.message.text.startsWith('/')) return;
-
-  // Reload config periodically
   config = loadConfig();
 
   const chatId = ctx.chat.id;
   const chatType = ctx.chat.type;
+  const messageId = ctx.message.message_id;
+  const threadId = ctx.message.message_thread_id || null;
+  const userName = resolveUserName(ctx.from);
 
-  // Private chat: must be authorized
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    message_id: messageId,
+    user_id: ctx.from.id,
+    user_name: userName,
+    text: ctx.message.text,
+    thread_id: threadId
+  };
+
+  // === PRIVATE CHAT ===
   if (chatType === 'private') {
-    // Check if owner needs to be bound
-    if (!hasOwner(config)) {
-      bindOwner(config, ctx);
-      ctx.reply('You are now the admin of this bot.');
-    }
-
+    if (!hasOwner(config)) bindOwner(config, ctx);
     if (!isAuthorized(config, ctx)) {
-      ctx.reply('Sorry, this bot is private.');
-      console.log(`[telegram] Unauthorized: ${ctx.from.username || chatId}`);
+      ctx.reply('Sorry, this bot is private.').catch(() => {});
       return;
     }
 
-    // Send to C4
-    const message = formatMessage(ctx, ctx.message.text);
-    sendToC4('telegram', String(chatId), message, (errMsg) => {
-      bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+    logAndRecord(chatId, logEntry, config);
+    const quotedContent = getReplyToContext(ctx);
+    const endpoint = buildEndpoint(chatId, { messageId });
+    const correlationId = `${chatId}:${messageId}`;
+    bot.telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: [{ type: 'emoji', emoji: '👀' }]
+    }).catch(() => {});
+    startTypingIndicator(chatId, correlationId, threadId);
+
+    const msg = formatMessage({
+      chatType: 'private',
+      userName,
+      text: ctx.message.text,
+      quotedContent,
+      mediaPath: null
+    });
+    sendToC4('telegram', endpoint, msg, (errMsg) => {
+      stopTypingIndicator(correlationId);
+      clearReaction(chatId, messageId);
+      bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
     });
     return;
   }
 
-  // Group chat: check permissions
+  // === GROUP / SUPERGROUP CHAT ===
   if (chatType === 'group' || chatType === 'supergroup') {
-    const isAllowed = isAllowedGroup(config, chatId);
-    const isSmartGrp = isSmartGroup(config, chatId);
-    const botUsername = bot.botInfo?.username;
-    const isMentioned = botUsername && ctx.message.text.includes(`@${botUsername}`);
-    const senderIsOwner = config.owner && String(ctx.from.id) === String(config.owner.chat_id);
+    const isAllowed = isGroupAllowed(config, chatId);
+    const isSmart = isSmartGroup(config, chatId, threadId);
+    const mentioned = isBotMentioned(ctx);
+    const senderIsOwner = isOwner(config, ctx);
 
-    // Log messages from allowed/smart groups for context
-    if (isAllowed || isSmartGrp) {
-      logMessage(chatId, ctx);
+    // Replay log history before recording new entry to preserve chronological order
+    ensureReplay(getHistoryKey(chatId, threadId), config);
+
+    if (isAllowed) {
+      logAndRecord(chatId, logEntry, config);
     }
 
-    // Smart groups receive all messages
-    if (isSmartGrp) {
-      const message = formatMessage(ctx, ctx.message.text);
-      sendToC4('telegram', String(chatId), message, (errMsg) => {
-        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
-      });
-      return;
-    }
+    const policy = config.groupPolicy || 'allowlist';
+    const shouldRespond =
+      isSmart ||
+      (isAllowed && mentioned) ||
+      (policy !== 'disabled' && senderIsOwner && mentioned);
 
-    // Allowed groups respond to @mentions (with context)
-    if (isAllowed && isMentioned) {
-      const contextMessages = getGroupContext(chatId);
-      const contextPrefix = formatContextPrefix(contextMessages);
-      updateCursor(chatId, ctx.message.message_id);
-      const cleanText = ctx.message.text.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim();
-      const message = formatMessage(ctx, cleanText || ctx.message.text, null, contextPrefix);
-      sendToC4('telegram', String(chatId), message, (errMsg) => {
-        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
-      });
-      return;
-    }
-
-    // Owner can @mention bot in any group (even non-whitelisted, with context)
-    if (senderIsOwner && isMentioned) {
-      // Log this message for future context if not already logged
-      if (!isAllowed && !isSmartGrp) {
-        logMessage(chatId, ctx);
+    if (!shouldRespond) {
+      if (!isAllowed && mentioned) {
+        console.log(`[telegram] Group not allowed: ${chatId}`);
       }
-      const contextMessages = getGroupContext(chatId);
-      const contextPrefix = formatContextPrefix(contextMessages);
-      updateCursor(chatId, ctx.message.message_id);
-      const cleanText = ctx.message.text.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim();
-      const message = formatMessage(ctx, cleanText || ctx.message.text, null, contextPrefix);
-      sendToC4('telegram', String(chatId), message, (errMsg) => {
-        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
-      });
       return;
     }
 
-    // Not in allowed_groups - ignore
-    if (!isAllowed && isMentioned) {
-      console.log(`[telegram] Group not allowed: ${chatId}`);
+    if (!senderIsOwner && !isSenderAllowed(config, chatId, ctx.from.id)) {
+      console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId}`);
+      return;
     }
+
+    // Log owner messages from non-allowed groups only when responding
+    if (!isAllowed && senderIsOwner) {
+      logAndRecord(chatId, logEntry, config);
+    }
+
+    const historyKey = getHistoryKey(chatId, threadId);
+    const contextMessages = getHistory(historyKey, messageId, config);
+    const quotedContent = getReplyToContext(ctx);
+    const groupName = getGroupName(config, chatId, ctx.chat.title);
+
+    const cleanText = mentioned ? replaceBotMention(ctx) : ctx.message.text;
+
+    const endpoint = buildEndpoint(chatId, { messageId, threadId });
+    const correlationId = `${chatId}:${messageId}`;
+    const smartNoMention = isSmart && !mentioned;
+
+    // Eyes reaction for all group messages; typing only when @mentioned
+    bot.telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: [{ type: 'emoji', emoji: '👀' }]
+    }).catch(() => {});
+    if (!smartNoMention) {
+      startTypingIndicator(chatId, correlationId, threadId);
+    }
+
+    const sendReplyOpts = threadId ? { message_thread_id: threadId } : {};
+    const msg = formatMessage({
+      chatType,
+      groupName,
+      userName,
+      text: cleanText || ctx.message.text,
+      contextMessages,
+      quotedContent,
+      mediaPath: null,
+      isThread: !!threadId,
+      smartHint: smartNoMention
+    });
+    sendToC4('telegram', endpoint, msg, (errMsg) => {
+      stopTypingIndicator(correlationId);
+      clearReaction(chatId, messageId);
+      bot.telegram.sendMessage(chatId, errMsg, sendReplyOpts).catch(() => {});
+    });
   }
 });
 
@@ -330,65 +573,171 @@ bot.on('text', (ctx) => {
  * Handle photo messages
  */
 bot.on('photo', async (ctx) => {
-  config = loadConfig();
+  const config = loadConfig();
 
   const chatType = ctx.chat.type;
   const chatId = ctx.chat.id;
+  const messageId = ctx.message.message_id;
+  const threadId = ctx.message.message_thread_id || null;
+  const userName = resolveUserName(ctx.from);
 
   // For private chat: must be authorized, download immediately
   if (chatType === 'private') {
+    if (!hasOwner(config)) bindOwner(config, ctx);
     if (!isAuthorized(config, ctx)) {
-      ctx.reply('Sorry, this bot is private.');
+      ctx.reply('Sorry, this bot is private.').catch(() => {});
       return;
     }
     if (!config.features.download_media) {
-      ctx.reply('Media download is disabled.');
+      ctx.reply('Media download is disabled.').catch(() => {});
       return;
     }
+
+    const photos = ctx.message.photo;
+    const fileId = photos[photos.length - 1].file_id;
+    const caption = ctx.message.caption || '[sent a photo]';
+    const photoInfo = `[photo, file_id: ${fileId}, msg_id: ${messageId}]`;
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      message_id: messageId,
+      user_id: ctx.from.id,
+      user_name: userName,
+      text: `${caption}\n${photoInfo}`,
+      thread_id: threadId
+    };
+    logAndRecord(chatId, logEntry, config);
+
     try {
       const localPath = await downloadPhoto(ctx);
-      const caption = ctx.message.caption || '[sent a photo]';
-      const message = formatMessage(ctx, caption, localPath);
-      sendToC4('telegram', String(chatId), message, (errMsg) => {
-        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+      const endpoint = buildEndpoint(chatId, { messageId, threadId });
+      const correlationId = `${chatId}:${messageId}`;
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: [{ type: 'emoji', emoji: '👀' }]
+      }).catch(() => {});
+      startTypingIndicator(chatId, correlationId, threadId);
+
+      const msg = formatMessage({
+        chatType: 'private',
+        userName,
+        text: caption,
+        quotedContent: getReplyToContext(ctx),
+        mediaPath: localPath,
+        isThread: !!threadId
       });
-      ctx.reply('Photo received!');
+      sendToC4('telegram', endpoint, msg, (errMsg) => {
+        stopTypingIndicator(correlationId);
+        clearReaction(chatId, messageId);
+        bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+      });
     } catch (err) {
       console.error(`[telegram] Photo download error: ${err.message}`);
-      ctx.reply('Failed to download photo.');
+      ctx.reply('Failed to download photo.').catch(() => {});
     }
     return;
   }
 
   // Group chat
-  const isAllowed = isAllowedGroup(config, chatId);
-  const isSmartGrp = isSmartGroup(config, chatId);
-  if (!isAllowed && !isSmartGrp) return;
+  const isAllowed = isGroupAllowed(config, chatId);
+  const isSmart = isSmartGroup(config, chatId, threadId);
+  if (!isAllowed && !isSmart) return;
+
+  // Replay log history before recording new entry to preserve chronological order
+  ensureReplay(getHistoryKey(chatId, threadId), config);
 
   // Build log text with photo metadata for context
   const photos = ctx.message.photo;
   const fileId = photos[photos.length - 1].file_id;
   const caption = ctx.message.caption || '';
-  const photoInfo = `[photo, file_id: ${fileId}, msg_id: ${ctx.message.message_id}]`;
+  const photoInfo = `[photo, file_id: ${fileId}, msg_id: ${messageId}]`;
   const logText = caption ? `${caption}\n${photoInfo}` : photoInfo;
-  logMessage(chatId, ctx, logText);
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    message_id: messageId,
+    user_id: ctx.from.id,
+    user_name: userName,
+    text: logText,
+    thread_id: threadId
+  };
+  logAndRecord(chatId, logEntry, config);
 
-  // Smart groups: download immediately
-  if (isSmartGrp) {
-    if (!config.features.download_media) return;
+  // Smart/mention groups: only download when @mentioned in caption
+  if (isBotMentioned(ctx)) {
+    if (!config.features.download_media) {
+      bot.telegram.sendMessage(chatId, 'Media download is disabled.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+      return;
+    }
+    if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) {
+      console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (photo)`);
+      return;
+    }
     try {
       const localPath = await downloadPhoto(ctx);
-      const message = formatMessage(ctx, caption || '[sent a photo]', localPath);
-      sendToC4('telegram', String(chatId), message, (errMsg) => {
-        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+      const endpoint = buildEndpoint(chatId, { messageId, threadId });
+      const correlationId = `${chatId}:${messageId}`;
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: [{ type: 'emoji', emoji: '👀' }]
+      }).catch(() => {});
+      startTypingIndicator(chatId, correlationId, threadId);
+
+      const msg = formatMessage({
+        chatType,
+        groupName: getGroupName(config, chatId, ctx.chat.title),
+        userName,
+        text: caption ? replaceBotMention(ctx) : '[sent a photo]',
+        contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
+        quotedContent: getReplyToContext(ctx),
+        mediaPath: localPath,
+        isThread: !!threadId
+      });
+      sendToC4('telegram', endpoint, msg, (errMsg) => {
+        stopTypingIndicator(correlationId);
+        clearReaction(chatId, messageId);
+        bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
     } catch (err) {
       console.error(`[telegram] Photo download error: ${err.message}`);
+      bot.telegram.sendMessage(chatId, 'Failed to process photo.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
     }
     return;
   }
 
-  // Non-smart groups: logged with metadata, lazy download via context
+  // Not @mentioned in smart group: forward without downloading, eyes reaction
+  if (isSmart) {
+    if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
+
+    const endpoint = buildEndpoint(chatId, { messageId, threadId });
+    const correlationId = `${chatId}:${messageId}`;
+
+    bot.telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: [{ type: 'emoji', emoji: '👀' }]
+    }).catch(() => {});
+
+    const msg = formatMessage({
+      chatType,
+      groupName: getGroupName(config, chatId, ctx.chat.title),
+      userName,
+      text: caption ? `${caption}\n${photoInfo}` : `[sent a photo]\n${photoInfo}`,
+      contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
+      quotedContent: getReplyToContext(ctx),
+      mediaPath: null,
+      isThread: !!threadId,
+      smartHint: true
+    });
+    sendToC4('telegram', endpoint, msg, (errMsg) => {
+      stopTypingIndicator(correlationId);
+      clearReaction(chatId, messageId);
+      bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    });
+    return;
+  }
+
+  // Not @mentioned in non-smart group: logged with metadata only
   console.log(`[telegram] Photo logged for lazy download in group ${chatId}`);
 });
 
@@ -396,65 +745,251 @@ bot.on('photo', async (ctx) => {
  * Handle document messages
  */
 bot.on('document', async (ctx) => {
-  config = loadConfig();
+  const config = loadConfig();
 
   const chatType = ctx.chat.type;
   const chatId = ctx.chat.id;
+  const messageId = ctx.message.message_id;
+  const threadId = ctx.message.message_thread_id || null;
+  const userName = resolveUserName(ctx.from);
 
   // For private chat: must be authorized, download immediately
   if (chatType === 'private') {
+    if (!hasOwner(config)) bindOwner(config, ctx);
     if (!isAuthorized(config, ctx)) {
-      ctx.reply('Sorry, this bot is private.');
+      ctx.reply('Sorry, this bot is private.').catch(() => {});
       return;
     }
     if (!config.features.download_media) {
-      ctx.reply('Media download is disabled.');
+      ctx.reply('Media download is disabled.').catch(() => {});
       return;
     }
+
+    const doc = ctx.message.document;
+    const fileName = doc.file_name || 'file';
+    const caption = ctx.message.caption || `[sent a file: ${fileName}]`;
+    const fileInfo = `[file: ${fileName}, file_id: ${doc.file_id}, msg_id: ${messageId}]`;
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      message_id: messageId,
+      user_id: ctx.from.id,
+      user_name: userName,
+      text: `${caption}\n${fileInfo}`,
+      thread_id: threadId
+    };
+    logAndRecord(chatId, logEntry, config);
+
     try {
       const localPath = await downloadDocument(ctx);
-      const caption = ctx.message.caption || `[sent a file: ${ctx.message.document.file_name}]`;
-      const message = formatMessage(ctx, caption, localPath);
-      sendToC4('telegram', String(chatId), message, (errMsg) => {
-        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+      const endpoint = buildEndpoint(chatId, { messageId, threadId });
+      const correlationId = `${chatId}:${messageId}`;
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: [{ type: 'emoji', emoji: '👀' }]
+      }).catch(() => {});
+      startTypingIndicator(chatId, correlationId, threadId);
+
+      const msg = formatMessage({
+        chatType: 'private',
+        userName,
+        text: caption,
+        quotedContent: getReplyToContext(ctx),
+        mediaPath: localPath,
+        isThread: !!threadId
       });
-      ctx.reply('File received!');
+      sendToC4('telegram', endpoint, msg, (errMsg) => {
+        stopTypingIndicator(correlationId);
+        clearReaction(chatId, messageId);
+        bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+      });
     } catch (err) {
       console.error(`[telegram] Document download error: ${err.message}`);
-      ctx.reply('Failed to download file.');
+      ctx.reply('Failed to download file.').catch(() => {});
     }
     return;
   }
 
   // Group chat
-  const isAllowed = isAllowedGroup(config, chatId);
-  const isSmartGrp = isSmartGroup(config, chatId);
-  if (!isAllowed && !isSmartGrp) return;
+  const isAllowed = isGroupAllowed(config, chatId);
+  const isSmart = isSmartGroup(config, chatId, threadId);
+  if (!isAllowed && !isSmart) return;
+
+  // Replay log history before recording new entry to preserve chronological order
+  ensureReplay(getHistoryKey(chatId, threadId), config);
 
   // Build log text with file metadata for context
   const doc = ctx.message.document;
+  const fileName = doc.file_name || 'file';
   const caption = ctx.message.caption || '';
-  const fileInfo = `[file: ${doc.file_name}, file_id: ${doc.file_id}, msg_id: ${ctx.message.message_id}]`;
+  const fileInfo = `[file: ${fileName}, file_id: ${doc.file_id}, msg_id: ${messageId}]`;
   const logText = caption ? `${caption}\n${fileInfo}` : fileInfo;
-  logMessage(chatId, ctx, logText);
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    message_id: messageId,
+    user_id: ctx.from.id,
+    user_name: userName,
+    text: logText,
+    thread_id: threadId
+  };
+  logAndRecord(chatId, logEntry, config);
 
-  // Smart groups: download immediately
-  if (isSmartGrp) {
-    if (!config.features.download_media) return;
+  // Smart/mention groups: only download when @mentioned in caption
+  if (isBotMentioned(ctx)) {
+    if (!config.features.download_media) {
+      bot.telegram.sendMessage(chatId, 'Media download is disabled.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+      return;
+    }
+    if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) {
+      console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (document)`);
+      return;
+    }
     try {
       const localPath = await downloadDocument(ctx);
-      const message = formatMessage(ctx, caption || `[sent a file: ${doc.file_name}]`, localPath);
-      sendToC4('telegram', String(chatId), message, (errMsg) => {
-        bot.telegram.sendMessage(chatId, errMsg).catch(() => {});
+      const endpoint = buildEndpoint(chatId, { messageId, threadId });
+      const correlationId = `${chatId}:${messageId}`;
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: [{ type: 'emoji', emoji: '👀' }]
+      }).catch(() => {});
+      startTypingIndicator(chatId, correlationId, threadId);
+
+      const msg = formatMessage({
+        chatType,
+        groupName: getGroupName(config, chatId, ctx.chat.title),
+        userName,
+        text: caption ? replaceBotMention(ctx) : `[sent a file: ${fileName}]`,
+        contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
+        quotedContent: getReplyToContext(ctx),
+        mediaPath: localPath,
+        isThread: !!threadId
+      });
+      sendToC4('telegram', endpoint, msg, (errMsg) => {
+        stopTypingIndicator(correlationId);
+        clearReaction(chatId, messageId);
+        bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
     } catch (err) {
       console.error(`[telegram] Document download error: ${err.message}`);
+      bot.telegram.sendMessage(chatId, 'Failed to process document.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
     }
     return;
   }
 
-  // Non-smart groups: logged with metadata, lazy download via context
+  // Not @mentioned in smart group: forward without downloading, eyes reaction
+  if (isSmart) {
+    if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
+
+    const endpoint = buildEndpoint(chatId, { messageId, threadId });
+    const correlationId = `${chatId}:${messageId}`;
+
+    bot.telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: [{ type: 'emoji', emoji: '👀' }]
+    }).catch(() => {});
+
+    const msg = formatMessage({
+      chatType,
+      groupName: getGroupName(config, chatId, ctx.chat.title),
+      userName,
+      text: caption ? `${caption}\n${fileInfo}` : `[sent a file: ${fileName}]\n${fileInfo}`,
+      contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
+      quotedContent: getReplyToContext(ctx),
+      mediaPath: null,
+      isThread: !!threadId,
+      smartHint: true
+    });
+    sendToC4('telegram', endpoint, msg, (errMsg) => {
+      stopTypingIndicator(correlationId);
+      clearReaction(chatId, messageId);
+      bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    });
+    return;
+  }
+
+  // Not @mentioned in non-smart group: logged with metadata only
   console.log(`[telegram] Document logged for lazy download in group ${chatId}`);
+});
+
+// Internal HTTP server for recording bot's outgoing messages.
+const INTERNAL_PORT = config.internal_port || 3460;
+const MAX_BODY_SIZE = 64 * 1024;
+const INTERNAL_TOKEN = crypto.createHash('sha256').update(botToken).digest('hex');
+
+const internalServer = http.createServer((req, res) => {
+  if (req.method === 'POST' && req.url === '/internal/record-outgoing') {
+    const token = req.headers['x-internal-token'];
+    if (token !== INTERNAL_TOKEN) {
+      res.writeHead(403).end('forbidden');
+      return;
+    }
+
+    const chunks = [];
+    let size = 0;
+    let aborted = false;
+    req.on('data', chunk => {
+      if (aborted) return;
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) {
+        aborted = true;
+        res.writeHead(413).end('body too large');
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('error', () => {});
+
+    req.on('end', () => {
+      if (res.headersSent) return;
+      const body = Buffer.concat(chunks).toString('utf8');
+      let parsed;
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        res.writeHead(400).end('invalid json');
+        return;
+      }
+
+      const { chatId, threadId, text } = parsed;
+      if (!chatId || !text) {
+        res.writeHead(400).end('missing chatId or text');
+        return;
+      }
+
+      logAndRecord(chatId, {
+        timestamp: new Date().toISOString(),
+        message_id: `bot:${Date.now()}`,
+        user_id: 'bot',
+        user_name: bot.botInfo?.username || 'bot',
+        text: text.substring(0, 500),
+        thread_id: threadId || null
+      }, config);
+      res.writeHead(200).end('ok');
+    });
+  } else {
+    res.writeHead(404).end();
+  }
+});
+
+let internalServerRetries = 0;
+internalServer.on('error', (err) => {
+  console.error(`[telegram] Internal server error: ${err.message}`);
+  if (err.code === 'EADDRINUSE') {
+    if (++internalServerRetries >= 5) {
+      console.error(`[telegram] Internal server: gave up after 5 retries, outgoing recording disabled`);
+      return;
+    }
+    console.error(`[telegram] Port ${INTERNAL_PORT} in use, retrying in 3s (${internalServerRetries}/5)...`);
+    setTimeout(() => internalServer.listen(INTERNAL_PORT, '127.0.0.1'), 3000);
+  }
+});
+
+internalServer.listen(INTERNAL_PORT, '127.0.0.1', () => {
+  internalServerRetries = 0;
+  console.log(`[telegram] Internal server on 127.0.0.1:${INTERNAL_PORT}`);
 });
 
 /**
@@ -467,11 +1002,31 @@ bot.catch((err, ctx) => {
 /**
  * Start bot
  */
-bot.launch().then(() => {
-  console.log('[telegram] zylos-telegram started');
+bot.launch({
+  allowedUpdates: ['message', 'my_chat_member']
+}).then(() => {
+  console.log('[telegram] zylos-telegram v0.2.0 started');
   console.log(`[telegram] Proxy: ${proxyUrl || 'none'}`);
+  console.log(`[telegram] Bot: @${bot.botInfo?.username}`);
+}).catch((err) => {
+  console.error('[telegram] Failed to start bot:', err.message);
+  process.exit(1);
 });
 
 // Graceful shutdown
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+function cleanup() {
+  persistUserCache();
+  clearInterval(typingPollInterval);
+  clearInterval(cachePersistInterval);
+  if (typingWatcher) typingWatcher.close();
+  for (const [id] of activeTypingIndicators) stopTypingIndicator(id);
+  internalServer.close();
+}
+process.once('SIGINT', () => {
+  cleanup();
+  bot.stop('SIGINT');
+});
+process.once('SIGTERM', () => {
+  cleanup();
+  bot.stop('SIGTERM');
+});

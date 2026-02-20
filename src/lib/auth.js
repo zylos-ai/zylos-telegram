@@ -16,22 +16,24 @@ export function hasOwner(config) {
  * Bind first user as owner
  */
 export function bindOwner(config, ctx) {
-  const chatId = String(ctx.chat.id);
+  const userId = String(ctx.from.id);
   const username = ctx.from.username || null;
 
   config.owner = {
-    chat_id: chatId,
+    chat_id: userId,
     username: username,
     bound_at: new Date().toISOString()
   };
 
-  // Auto-add owner to whitelist
-  if (!config.whitelist.chat_ids.includes(chatId)) {
-    config.whitelist.chat_ids.push(chatId);
+  // Auto-add owner to whitelist (in private chat, from.id === chat.id)
+  if (!config.whitelist.chat_ids.includes(userId)) {
+    config.whitelist.chat_ids.push(userId);
   }
 
-  saveConfig(config);
-  console.log(`[telegram] Owner bound: ${username || chatId}`);
+  if (!saveConfig(config)) {
+    console.error('[telegram] Config change succeeded in memory but failed to persist to disk');
+  }
+  console.log(`[telegram] Owner bound: ${username || userId}`);
 
   return true;
 }
@@ -41,7 +43,7 @@ export function bindOwner(config, ctx) {
  */
 export function isOwner(config, ctx) {
   if (!hasOwner(config)) return false;
-  return String(ctx.chat.id) === String(config.owner.chat_id);
+  return String(ctx.from.id) === String(config.owner.chat_id);
 }
 
 /**
@@ -71,103 +73,127 @@ export function isAuthorized(config, ctx) {
   return isOwner(config, ctx) || isWhitelisted(config, ctx);
 }
 
+// ============================================================
+// Group policy (v0.2.0 - replaces allowed_groups/smart_groups)
+// ============================================================
+
 /**
- * Add user to whitelist
+ * Get the config entry for a specific group.
+ * @param {object} config
+ * @param {string|number} chatId
+ * @returns {object|undefined} Group config entry or undefined
  */
-export function addToWhitelist(config, chatId, username = null) {
+export function getGroupConfig(config, chatId) {
   chatId = String(chatId);
-
-  if (!config.whitelist.chat_ids.includes(chatId)) {
-    config.whitelist.chat_ids.push(chatId);
-  }
-
-  if (username && !config.whitelist.usernames.includes(username.toLowerCase())) {
-    config.whitelist.usernames.push(username.toLowerCase());
-  }
-
-  saveConfig(config);
-  return true;
+  return config.groups?.[chatId];
 }
 
 /**
- * Remove user from whitelist
+ * Check if a group is allowed by the current policy.
+ * @param {object} config
+ * @param {string|number} chatId
+ * @returns {boolean}
  */
-export function removeFromWhitelist(config, chatId) {
+export function isGroupAllowed(config, chatId) {
   chatId = String(chatId);
+  const policy = config.groupPolicy || 'allowlist';
 
-  config.whitelist.chat_ids = config.whitelist.chat_ids.filter(id => id !== chatId);
-  saveConfig(config);
-  return true;
+  if (policy === 'disabled') return false;
+  if (policy === 'open') return true;
+  // allowlist: must be in groups map
+  return !!config.groups?.[chatId];
 }
 
 /**
- * Check if group is in allowed_groups (can respond to @mentions)
- * When group_whitelist.enabled is true (default): only listed groups are allowed.
- * When group_whitelist.enabled is false: all groups are allowed (open mode).
- * Note: Owner is always allowed regardless — checked separately in bot.js.
+ * Check if a group (or specific thread) is in "smart" mode.
+ * Thread-level mode overrides group-level mode.
+ * @param {object} config
+ * @param {string|number} chatId
+ * @param {string|number|null} threadId - Optional thread ID for forum topics
+ * @returns {boolean}
  */
-export function isAllowedGroup(config, chatId) {
+export function isSmartGroup(config, chatId, threadId = null) {
   chatId = String(chatId);
-  const whitelistEnabled = config.group_whitelist?.enabled !== false;
-  if (!whitelistEnabled) return true;
-  if (!config.allowed_groups || config.allowed_groups.length === 0) return false;
-  return config.allowed_groups.some(g => String(g.chat_id) === chatId);
+  const policy = config.groupPolicy || 'allowlist';
+  if (policy === 'disabled') return false;
+  const gc = config.groups?.[chatId];
+  if (!gc) return false;
+  // Check thread-level override first
+  if (threadId && gc.threads?.[String(threadId)]?.mode) {
+    return gc.threads[String(threadId)].mode === 'smart';
+  }
+  return gc.mode === 'smart';
 }
 
 /**
- * Add group to allowed_groups
+ * Check if a sender is allowed to trigger the bot in a group.
+ * @param {object} config
+ * @param {string|number} chatId
+ * @param {string|number} senderId - Telegram user ID
+ * @returns {boolean}
  */
-export function addAllowedGroup(config, chatId, name) {
+export function isSenderAllowed(config, chatId, senderId) {
   chatId = String(chatId);
-  if (!config.allowed_groups) {
-    config.allowed_groups = [];
-  }
+  senderId = String(senderId);
+  const gc = config.groups?.[chatId];
+  if (!gc?.allowFrom || gc.allowFrom.length === 0) return true;
+  if (gc.allowFrom.includes('*')) return true;
+  return gc.allowFrom.includes(senderId);
+}
 
-  // Check if already exists
-  if (config.allowed_groups.some(g => String(g.chat_id) === chatId)) {
-    return false;
-  }
+/**
+ * Get the group's name from config or fallback.
+ * @param {object} config
+ * @param {string|number} chatId
+ * @param {string} [chatTitle] - Telegram chat title fallback
+ * @returns {string}
+ */
+export function getGroupName(config, chatId, chatTitle) {
+  chatId = String(chatId);
+  const gc = config.groups?.[chatId];
+  return gc?.name || chatTitle || 'group';
+}
 
-  config.allowed_groups.push({
-    chat_id: chatId,
-    name: name,
+/**
+ * Add a group to the groups map.
+ * @param {object} config - Mutable config object
+ * @param {string|number} chatId
+ * @param {string} name
+ * @param {'mention'|'smart'} [mode='mention']
+ * @returns {boolean} true if added, false if already exists
+ */
+export function addGroup(config, chatId, name, mode = 'mention') {
+  chatId = String(chatId);
+  if (!config.groups) config.groups = {};
+  if (config.groups[chatId]) return false;
+
+  config.groups[chatId] = {
+    name,
+    mode,
+    allowFrom: ['*'],
+    historyLimit: config.message?.context_messages || 5,
     added_at: new Date().toISOString()
-  });
+  };
 
-  saveConfig(config);
-  console.log(`[telegram] Allowed group added: ${name} (${chatId})`);
+  if (!saveConfig(config)) {
+    console.error('[telegram] Config change succeeded in memory but failed to persist to disk');
+  }
+  console.log(`[telegram] Group added: ${name} (${chatId}) mode=${mode}`);
   return true;
 }
 
 /**
- * Remove group from allowed_groups
+ * Remove a group from the groups map.
+ * @param {object} config
+ * @param {string|number} chatId
+ * @returns {boolean}
  */
-export function removeAllowedGroup(config, chatId) {
+export function removeGroup(config, chatId) {
   chatId = String(chatId);
-  if (!config.allowed_groups) return false;
-
-  const index = config.allowed_groups.findIndex(g => String(g.chat_id) === chatId);
-  if (index === -1) return false;
-
-  config.allowed_groups.splice(index, 1);
-  saveConfig(config);
+  if (!config.groups?.[chatId]) return false;
+  delete config.groups[chatId];
+  if (!saveConfig(config)) {
+    console.error('[telegram] Config change succeeded in memory but failed to persist to disk');
+  }
   return true;
-}
-
-/**
- * Check if chat is a smart group (receive all messages)
- */
-export function isSmartGroup(config, chatId) {
-  chatId = String(chatId);
-  if (!config.smart_groups) return false;
-  return config.smart_groups.some(g => String(g.chat_id) === chatId);
-}
-
-/**
- * Get smart group name
- */
-export function getSmartGroupName(config, chatId) {
-  chatId = String(chatId);
-  const group = config.smart_groups.find(g => String(g.chat_id) === chatId);
-  return group ? group.name : null;
 }

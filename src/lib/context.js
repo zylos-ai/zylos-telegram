@@ -1,114 +1,245 @@
 /**
- * Group context management for zylos-telegram
- * Logs messages and provides context for @mentions
+ * In-memory chat history and context formatting for zylos-telegram v0.2.0
  */
 
 import fs from 'fs';
 import path from 'path';
 import { DATA_DIR, loadConfig } from './config.js';
+import { getHistoryKey, historyKeyToLogFile, escapeXml } from './utils.js';
 
 const LOGS_DIR = path.join(DATA_DIR, 'logs');
-const CURSORS_PATH = path.join(DATA_DIR, 'group-cursors.json');
+fs.mkdirSync(LOGS_DIR, { recursive: true });
 
-// Ensure logs directory exists
-if (!fs.existsSync(LOGS_DIR)) {
-  fs.mkdirSync(LOGS_DIR, { recursive: true });
-}
+// ============================================================
+// In-memory history
+// ============================================================
 
-// Load/save cursors
-let groupCursors = {};
-try {
-  if (fs.existsSync(CURSORS_PATH)) {
-    groupCursors = JSON.parse(fs.readFileSync(CURSORS_PATH, 'utf-8'));
-  }
-} catch {}
+/** @type {Map<string, Array<HistoryEntry>>} */
+const chatHistories = new Map();
 
-function saveCursors() {
-  fs.writeFileSync(CURSORS_PATH, JSON.stringify(groupCursors, null, 2));
+/** @type {Set<string>} Track which historyKeys have been replayed from log files */
+const _replayedKeys = new Set();
+
+/**
+ * @typedef {Object} HistoryEntry
+ * @property {string} timestamp - ISO 8601
+ * @property {number|string|null} message_id - Telegram message ID or synthetic bot:* ID
+ * @property {string|number} user_id - Telegram user ID or 'bot'
+ * @property {string} user_name - Display name
+ * @property {string} text - Message text
+ * @property {number|string|null} [thread_id] - Topic thread ID (null for non-topic)
+ */
+
+/**
+ * Get history limit for a given historyKey.
+ * Checks per-group config first, then global default.
+ *
+ * @param {string} historyKey
+ * @returns {number}
+ */
+function getHistoryLimit(historyKey, config = null) {
+  const cfg = config || loadConfig();
+  // historyKey is either "chatId" or "chatId:threadId" - extract chatId
+  const chatId = historyKey.includes(':') ? historyKey.split(':')[0] : historyKey;
+  const groupConfig = cfg.groups?.[chatId];
+  return groupConfig?.historyLimit || cfg.message?.context_messages || 5;
 }
 
 /**
- * Log a message to the chat's log file
+ * Record a message into in-memory history.
+ * Deduplicates by message_id (skips null/synthetic bot: IDs).
+ *
+ * @param {string} historyKey - From getHistoryKey()
+ * @param {HistoryEntry} entry
+ */
+export function recordHistoryEntry(historyKey, entry, config = null) {
+  if (!chatHistories.has(historyKey)) chatHistories.set(historyKey, []);
+  const history = chatHistories.get(historyKey);
+
+  // Dedup only real message IDs (skip null/synthetic)
+  if (entry.message_id && !String(entry.message_id).startsWith('bot:')) {
+    if (history.some(m => m.message_id === entry.message_id)) return;
+  }
+
+  history.push(entry);
+  const limit = getHistoryLimit(historyKey, config);
+  if (history.length > limit * 2) {
+    chatHistories.set(historyKey, history.slice(-limit));
+  }
+}
+
+/**
+ * Get recent context messages from in-memory history.
+ * Excludes the current message.
+ *
+ * @param {string} historyKey
+ * @param {number|string|null} [excludeMessageId] - Current message to exclude
+ * @returns {HistoryEntry[]}
+ */
+export function getHistory(historyKey, excludeMessageId, config = null) {
+  const history = chatHistories.get(historyKey);
+  if (!history || history.length === 0) return [];
+
+  const limit = getHistoryLimit(historyKey, config);
+  const filtered = excludeMessageId
+    ? history.filter(m => m.message_id !== excludeMessageId)
+    : history;
+  return filtered.slice(-limit);
+}
+
+// ============================================================
+// Cold-start replay from log files
+// ============================================================
+
+/**
+ * Ensure in-memory history is populated for a given historyKey.
+ * On first access after restart, reads tail of the per-key log file.
+ *
+ * @param {string} historyKey - From getHistoryKey() (chatId or chatId:threadId)
+ */
+export function ensureReplay(historyKey, config = null) {
+  historyKey = String(historyKey);
+  if (_replayedKeys.has(historyKey)) return;
+
+  const logFile = path.join(LOGS_DIR, historyKeyToLogFile(historyKey));
+  if (!fs.existsSync(logFile)) {
+    _replayedKeys.add(historyKey);
+    return;
+  }
+
+  const limit = getHistoryLimit(historyKey, config);
+
+  try {
+    // Read only the tail of the file to avoid loading large logs into memory
+    const stat = fs.statSync(logFile);
+    const BYTES_PER_ENTRY = 512;
+    const readSize = Math.min(stat.size, limit * BYTES_PER_ENTRY * 2);
+    let content;
+    if (readSize < stat.size) {
+      const buf = Buffer.alloc(readSize);
+      const fd = fs.openSync(logFile, 'r');
+      try {
+        fs.readSync(fd, buf, 0, readSize, stat.size - readSize);
+      } finally {
+        fs.closeSync(fd);
+      }
+      // Drop first (potentially partial) line
+      const text = buf.toString('utf-8');
+      const firstNewline = text.indexOf('\n');
+      content = firstNewline !== -1 ? text.substring(firstNewline + 1) : text;
+    } else {
+      content = fs.readFileSync(logFile, 'utf-8');
+    }
+    const lines = content.trim().split('\n').filter(l => l);
+    const tail = lines.slice(-limit);
+
+    for (const line of tail) {
+      let entry;
+      try { entry = JSON.parse(line); } catch { continue; }
+      recordHistoryEntry(historyKey, entry, config);
+    }
+
+    _replayedKeys.add(historyKey);
+    if (tail.length > 0) {
+      console.log(`[telegram] Replayed ${tail.length} log entries for ${historyKey}`);
+    }
+  } catch (err) {
+    // Don't mark as replayed on failure — allow retry on next message
+    console.error(`[telegram] Log replay failed for ${historyKey}: ${err.message}`);
+  }
+}
+
+// ============================================================
+// File logging (audit trail, unchanged hot path)
+// ============================================================
+
+/**
+ * Append a log entry to the per-key log file.
+ * Also records to in-memory history.
+ *
  * @param {string} chatId
- * @param {object} ctx - Telegraf context
- * @param {string} [textOverride] - Override text (e.g., with file metadata for lazy download)
+ * @param {HistoryEntry} entry - Must include thread_id field
  */
-export function logMessage(chatId, ctx, textOverride = null) {
+export function logAndRecord(chatId, entry, config = null) {
   chatId = String(chatId);
-  const username = ctx.from.username || ctx.from.first_name || 'unknown';
-  const userId = ctx.from.id;
-  const messageId = ctx.message.message_id;
-  const text = textOverride || ctx.message.text || ctx.message.caption || '';
+  const hk = getHistoryKey(chatId, entry.thread_id || null);
 
-  const logEntry = {
-    timestamp: new Date().toISOString(),
-    message_id: messageId,
-    user_id: userId,
-    user_name: username,
-    text: text
-  };
-
-  const logFile = path.join(LOGS_DIR, `${chatId}.log`);
-  fs.appendFileSync(logFile, JSON.stringify(logEntry) + '\n');
-}
-
-/**
- * Get recent context messages for a group
- */
-export function getGroupContext(chatId) {
-  chatId = String(chatId);
-  const logFile = path.join(LOGS_DIR, `${chatId}.log`);
-  if (!fs.existsSync(logFile)) return [];
-
-  const config = loadConfig();
-  const MIN_CONTEXT = 5;
-  const MAX_CONTEXT = config.message?.context_messages ?? 10;
-  const cursor = groupCursors[chatId] || null;
-
-  const lines = fs.readFileSync(logFile, 'utf-8').trim().split('\n').filter(l => l);
-  const messages = lines.map(line => {
-    try { return JSON.parse(line); } catch { return null; }
-  }).filter(m => m);
-
-  if (messages.length === 0) return [];
-
-  let cursorIndex = -1;
-  let currentIndex = messages.length - 1;
-
-  if (cursor) {
-    cursorIndex = messages.findIndex(m => m.message_id === cursor);
+  // File log (audit) — per historyKey
+  const logFile = path.join(LOGS_DIR, historyKeyToLogFile(hk));
+  try {
+    fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
+  } catch (err) {
+    console.error(`[telegram] Log write failed for ${hk}: ${err.message}`);
   }
 
-  // Get messages since cursor (excluding current message)
-  let contextMessages = messages.slice(cursorIndex + 1, currentIndex);
+  // In-memory history
+  recordHistoryEntry(hk, entry, config);
+}
 
-  // If not enough context, get recent messages instead
-  if (contextMessages.length < MIN_CONTEXT && currentIndex > 0) {
-    const startIndex = Math.max(0, currentIndex - MIN_CONTEXT);
-    contextMessages = messages.slice(startIndex, currentIndex);
+// ============================================================
+// XML-structured message formatting
+// ============================================================
+
+/**
+ * Format a complete C4 message with XML-structured context.
+ *
+ * @param {Object} opts
+ * @param {'private'|'group'|'supergroup'} opts.chatType
+ * @param {string} opts.groupName - Group display name (ignored for private)
+ * @param {string} opts.userName - Sender display name
+ * @param {string} opts.text - Current message text (already mention-stripped if needed)
+ * @param {HistoryEntry[]} [opts.contextMessages] - Group/thread context
+ * @param {{ sender: string, text: string }|null} [opts.quotedContent] - Reply-to content
+ * @param {string|null} [opts.mediaPath] - Local file path for media attachment
+ * @param {boolean} [opts.isThread] - True if this is a topic/forum thread
+ * @returns {string}
+ */
+export function formatMessage(opts) {
+  const {
+    chatType, groupName, userName, text,
+    contextMessages, quotedContent, mediaPath, isThread,
+    smartHint
+  } = opts;
+
+  // Prefix
+  let prefix;
+  if (chatType === 'private') {
+    prefix = '[TG DM]';
+  } else {
+    prefix = `[TG GROUP:${escapeXml(groupName || 'group')}]`;
   }
 
-  return contextMessages.slice(-MAX_CONTEXT);
-}
+  const parts = [`${prefix} ${escapeXml(userName)} said: `];
 
-/**
- * Update cursor after responding to a message
- */
-export function updateCursor(chatId, messageId) {
-  chatId = String(chatId);
-  groupCursors[chatId] = messageId;
-  saveCursors();
-}
+  // Context (group or thread)
+  if (contextMessages && contextMessages.length > 0) {
+    const tag = isThread ? 'thread-context' : 'group-context';
+    const contextLines = contextMessages.map(m =>
+      `[${escapeXml(m.user_name || String(m.user_id))}]: ${escapeXml(m.text)}`
+    ).join('\n');
+    parts.push(`<${tag}>\n${contextLines}\n</${tag}>\n\n`);
+  }
 
-/**
- * Format context messages as text
- */
-export function formatContextPrefix(contextMessages) {
-  if (!contextMessages || contextMessages.length === 0) return '';
+  // Reply-to
+  if (quotedContent) {
+    const sender = escapeXml(quotedContent.sender || 'unknown');
+    const quoted = escapeXml(quotedContent.text || '');
+    parts.push(`<replying-to>\n[${sender}]: ${quoted}\n</replying-to>\n\n`);
+  }
 
-  const contextLines = contextMessages.map(m =>
-    `[${m.user_name}]: ${m.text}`
-  ).join('\n');
+  // Smart mode hint — helps AI decide whether to respond
+  if (smartHint) {
+    parts.push(`<smart-mode>\nDecide whether to respond. Do NOT reply if: the message is unrelated to you, just casual chat, or doesn't need your input. Only reply when: 1) someone asks a question you can help with, 2) discussing technical topics you know well, 3) someone clearly needs assistance. When uncertain, prefer NOT to reply. Reply with exactly [SKIP] to stay silent.\n</smart-mode>\n\n`);
+  }
 
-  return `[Group context - recent messages before this @mention:]\n${contextLines}\n\n[Current message:] `;
+  // Current message
+  parts.push(`<current-message>\n${escapeXml(text)}\n</current-message>`);
+
+  let message = parts.join('');
+
+  if (mediaPath) {
+    message += ` ---- file: ${escapeXml(mediaPath)}`;
+  }
+
+  return message;
 }
