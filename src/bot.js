@@ -949,6 +949,14 @@ const internalServer = http.createServer((req, res) => {
   }
 });
 
+internalServer.on('error', (err) => {
+  console.error(`[telegram] Internal server error: ${err.message}`);
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[telegram] Port ${INTERNAL_PORT} in use, retrying in 3s...`);
+    setTimeout(() => internalServer.listen(INTERNAL_PORT, '127.0.0.1'), 3000);
+  }
+});
+
 internalServer.listen(INTERNAL_PORT, '127.0.0.1', () => {
   console.log(`[telegram] Internal server on 127.0.0.1:${INTERNAL_PORT}`);
 });

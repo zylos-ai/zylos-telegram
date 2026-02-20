@@ -39,13 +39,13 @@ export function loadUserCache() {
  */
 export function persistUserCache() {
   if (!_dirty) return;
-  _dirty = false;
   const obj = {};
   for (const [userId, entry] of userCache) {
     obj[userId] = entry.name;
   }
   try {
     fs.writeFileSync(CACHE_FILE, JSON.stringify(obj, null, 2));
+    _dirty = false;
   } catch (err) {
     console.log(`[telegram] Failed to persist user cache: ${err.message}`);
   }
