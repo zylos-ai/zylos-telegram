@@ -73,39 +73,6 @@ export function isAuthorized(config, ctx) {
   return isOwner(config, ctx) || isWhitelisted(config, ctx);
 }
 
-/**
- * Add user to whitelist
- */
-export function addToWhitelist(config, chatId, username = null) {
-  chatId = String(chatId);
-
-  if (!config.whitelist.chat_ids.includes(chatId)) {
-    config.whitelist.chat_ids.push(chatId);
-  }
-
-  if (username && !config.whitelist.usernames.includes(username.toLowerCase())) {
-    config.whitelist.usernames.push(username.toLowerCase());
-  }
-
-  if (!saveConfig(config)) {
-    console.error('[telegram] Config change succeeded in memory but failed to persist to disk');
-  }
-  return true;
-}
-
-/**
- * Remove user from whitelist
- */
-export function removeFromWhitelist(config, chatId) {
-  chatId = String(chatId);
-
-  config.whitelist.chat_ids = config.whitelist.chat_ids.filter(id => id !== chatId);
-  if (!saveConfig(config)) {
-    console.error('[telegram] Config change succeeded in memory but failed to persist to disk');
-  }
-  return true;
-}
-
 // ============================================================
 // Group policy (v0.2.0 - replaces allowed_groups/smart_groups)
 // ============================================================
