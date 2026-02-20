@@ -47,7 +47,7 @@ export function getHistoryKey(chatId, threadId) {
  * @returns {string} e.g. "-100123456.log" or "-100123456_t_789.log"
  */
 export function historyKeyToLogFile(historyKey) {
-  return historyKey.replace(':', '_t_') + '.log';
+  return historyKey.replaceAll(':', '_t_') + '.log';
 }
 
 /**

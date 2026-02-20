@@ -114,7 +114,7 @@ function sendToC4(source, endpoint, content, onReject) {
       return;
     }
     // Non-zero exit - check if c4-receive returned a structured rejection
-    const response = parseC4Response(error.stdout || stdout);
+    const response = parseC4Response(stdout);
     if (response && response.ok === false && response.error?.message) {
       console.warn(`[telegram] C4 rejected (${response.error.code}): ${response.error.message}`);
       if (onReject) onReject(response.error.message);
@@ -128,7 +128,7 @@ function sendToC4(source, endpoint, content, onReject) {
           console.log(`[telegram] Sent to C4 (retry): ${content.substring(0, 50)}...`);
           return;
         }
-        const retryResponse = parseC4Response(retryError.stdout || retryStdout);
+        const retryResponse = parseC4Response(retryStdout);
         if (retryResponse && retryResponse.ok === false && retryResponse.error?.message) {
           console.error(`[telegram] C4 rejected after retry (${retryResponse.error.code}): ${retryResponse.error.message}`);
           if (onReject) onReject(retryResponse.error.message);

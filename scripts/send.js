@@ -65,7 +65,8 @@ function apiRequest(method, params) {
   if (params.photo || params.document) {
     const filePath = params.photo || params.document;
     const fieldName = params.photo ? 'photo' : 'document';
-    curlCmd = `curl -s -X POST "${url}" -F "chat_id=${params.chat_id}" -F "${fieldName}=@${filePath}"`;
+    const escapedPath = filePath.replace(/"/g, '\\"');
+    curlCmd = `curl -s -X POST "${url}" -F "chat_id=${params.chat_id}" -F "${fieldName}=@${escapedPath}"`;
     if (params.reply_to_message_id) {
       curlCmd += ` -F "reply_to_message_id=${params.reply_to_message_id}"`;
     }

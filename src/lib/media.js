@@ -5,7 +5,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { getEnv } from './config.js';
 
 export const MEDIA_DIR = path.join(process.env.HOME, 'zylos/components/telegram/media');
@@ -46,14 +46,15 @@ export async function downloadFile(ctx, fileId, prefix = 'file') {
   // Download URL
   const fileUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
 
-  // Download using curl (supports proxy)
+  // Download using curl (supports proxy), with timeout
   return new Promise((resolve, reject) => {
-    let curlCmd = `curl -s -o "${localPath}" "${fileUrl}"`;
+    const args = ['-s', '--max-time', '30', '-o', localPath];
     if (proxyUrl) {
-      curlCmd = `curl -s --proxy "${proxyUrl}" -o "${localPath}" "${fileUrl}"`;
+      args.push('--proxy', proxyUrl);
     }
+    args.push(fileUrl);
 
-    exec(curlCmd, (error) => {
+    execFile('curl', args, { timeout: 35000 }, (error) => {
       if (error) {
         reject(new Error(`Download failed: ${error.message}`));
       } else {
@@ -83,6 +84,7 @@ export async function downloadPhoto(ctx) {
  */
 export async function downloadDocument(ctx) {
   const doc = ctx.message.document;
-  const prefix = doc.file_name ? path.parse(doc.file_name).name : 'document';
+  const rawPrefix = doc.file_name ? path.parse(doc.file_name).name : 'document';
+  const prefix = rawPrefix.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 64) || 'document';
   return downloadFile(ctx, doc.file_id, prefix);
 }
