@@ -37,7 +37,7 @@ export function loadConfig() {
     return deepMergeDefaults(DEFAULT_CONFIG, JSON.parse(data));
   } catch (err) {
     console.error('[telegram] Failed to load config, using defaults:', err.message);
-    return { ...DEFAULT_CONFIG };
+    return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
   }
 }
 

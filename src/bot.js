@@ -341,7 +341,7 @@ function notifyOwnerPendingGroup(chatId, chatTitle, addedBy) {
   // Use async execFile to avoid deadlock: send.js calls recordOutgoing()
   // which POSTs back to this process's internal HTTP server.
   // execFileSync would block the event loop, preventing the response.
-  execFile('node', [sendPath, config.owner.chat_id, message], { encoding: 'utf8' }, (err) => {
+  execFile('node', [sendPath, config.owner.chat_id, message], { encoding: 'utf8', timeout: 35000 }, (err) => {
     if (err) {
       console.error(`[telegram] Failed to notify owner: ${err.message}`);
     } else {
@@ -367,12 +367,12 @@ bot.on('new_chat_members', (ctx) => {
   if (String(config.owner?.chat_id) === addedById) {
     const added = addGroup(config, chatId, chatTitle, 'mention');
     if (added) {
-      ctx.reply(`Group added. Members can now @${bot.botInfo?.username} to chat.`);
+      ctx.reply(`Group added. Members can now @${bot.botInfo?.username} to chat.`).catch(() => {});
     } else {
-      ctx.reply('Group is already configured.');
+      ctx.reply('Group is already configured.').catch(() => {});
     }
   } else {
-    ctx.reply('Bot joined, but requires admin approval to respond.');
+    ctx.reply('Bot joined, but requires admin approval to respond.').catch(() => {});
     notifyOwnerPendingGroup(chatId, chatTitle, ctx.from.username || ctx.from.first_name || addedById);
   }
 });
@@ -420,18 +420,18 @@ bot.start((ctx) => {
 
   if (!hasOwner(config)) {
     bindOwner(config, ctx);
-    ctx.reply('You are now the admin of this bot.');
+    ctx.reply('You are now the admin of this bot.').catch(() => {});
     console.log(`[telegram] New owner: ${ctx.from.username || ctx.chat.id}`);
     return;
   }
 
   if (!isAuthorized(config, ctx)) {
-    ctx.reply('Sorry, this bot is private.');
+    ctx.reply('Sorry, this bot is private.').catch(() => {});
     console.log(`[telegram] Unauthorized /start: ${ctx.from.username || ctx.chat.id}`);
     return;
   }
 
-  ctx.reply('Bot is ready. Send me a message!');
+  ctx.reply('Bot is ready. Send me a message!').catch(() => {});
 });
 
 /**
@@ -460,7 +460,7 @@ bot.on('text', (ctx) => {
   if (chatType === 'private') {
     if (!hasOwner(config)) bindOwner(config, ctx);
     if (!isAuthorized(config, ctx)) {
-      ctx.reply('Sorry, this bot is private.');
+      ctx.reply('Sorry, this bot is private.').catch(() => {});
       return;
     }
 
@@ -583,11 +583,11 @@ bot.on('photo', async (ctx) => {
   // For private chat: must be authorized, download immediately
   if (chatType === 'private') {
     if (!isAuthorized(config, ctx)) {
-      ctx.reply('Sorry, this bot is private.');
+      ctx.reply('Sorry, this bot is private.').catch(() => {});
       return;
     }
     if (!config.features.download_media) {
-      ctx.reply('Media download is disabled.');
+      ctx.reply('Media download is disabled.').catch(() => {});
       return;
     }
 
@@ -631,7 +631,7 @@ bot.on('photo', async (ctx) => {
       });
     } catch (err) {
       console.error(`[telegram] Photo download error: ${err.message}`);
-      ctx.reply('Failed to download photo.');
+      ctx.reply('Failed to download photo.').catch(() => {});
     }
     return;
   }
@@ -753,11 +753,11 @@ bot.on('document', async (ctx) => {
   // For private chat: must be authorized, download immediately
   if (chatType === 'private') {
     if (!isAuthorized(config, ctx)) {
-      ctx.reply('Sorry, this bot is private.');
+      ctx.reply('Sorry, this bot is private.').catch(() => {});
       return;
     }
     if (!config.features.download_media) {
-      ctx.reply('Media download is disabled.');
+      ctx.reply('Media download is disabled.').catch(() => {});
       return;
     }
 
@@ -800,7 +800,7 @@ bot.on('document', async (ctx) => {
       });
     } catch (err) {
       console.error(`[telegram] Document download error: ${err.message}`);
-      ctx.reply('Failed to download file.');
+      ctx.reply('Failed to download file.').catch(() => {});
     }
     return;
   }
@@ -933,6 +933,7 @@ const internalServer = http.createServer((req, res) => {
       }
       chunks.push(chunk);
     });
+    req.on('error', () => {});
 
     req.on('end', () => {
       if (res.headersSent) return;
