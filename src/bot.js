@@ -1003,7 +1003,7 @@ bot.catch((err, ctx) => {
  * Start bot
  */
 bot.launch({
-  allowedUpdates: ['message', 'edited_message', 'callback_query', 'inline_query', 'my_chat_member']
+  allowedUpdates: ['message', 'my_chat_member']
 }).then(() => {
   console.log('[telegram] zylos-telegram v0.2.0 started');
   console.log(`[telegram] Proxy: ${proxyUrl || 'none'}`);

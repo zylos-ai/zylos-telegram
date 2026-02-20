@@ -136,7 +136,7 @@ export function ensureReplay(historyKey, config = null) {
     for (const line of tail) {
       let entry;
       try { entry = JSON.parse(line); } catch { continue; }
-      recordHistoryEntry(historyKey, entry);
+      recordHistoryEntry(historyKey, entry, config);
     }
 
     _replayedKeys.add(historyKey);
