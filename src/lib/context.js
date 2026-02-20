@@ -112,14 +112,17 @@ export function ensureReplay(historyKey, config = null) {
   try {
     // Read only the tail of the file to avoid loading large logs into memory
     const stat = fs.statSync(logFile);
-    const BYTES_PER_ENTRY = 256;
-    const readSize = Math.min(stat.size, limit * BYTES_PER_ENTRY);
+    const BYTES_PER_ENTRY = 512;
+    const readSize = Math.min(stat.size, limit * BYTES_PER_ENTRY * 2);
     let content;
     if (readSize < stat.size) {
       const buf = Buffer.alloc(readSize);
       const fd = fs.openSync(logFile, 'r');
-      fs.readSync(fd, buf, 0, readSize, stat.size - readSize);
-      fs.closeSync(fd);
+      try {
+        fs.readSync(fd, buf, 0, readSize, stat.size - readSize);
+      } finally {
+        fs.closeSync(fd);
+      }
       // Drop first (potentially partial) line
       const text = buf.toString('utf-8');
       const firstNewline = text.indexOf('\n');

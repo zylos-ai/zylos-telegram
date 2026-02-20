@@ -966,7 +966,7 @@ const internalServer = http.createServer((req, res) => {
         user_name: bot.botInfo?.username || 'bot',
         text: text.substring(0, 500),
         thread_id: threadId || null
-      });
+      }, config);
       res.writeHead(200).end('ok');
     });
   } else {
