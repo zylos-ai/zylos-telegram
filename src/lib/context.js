@@ -37,12 +37,12 @@ const _replayedKeys = new Set();
  * @param {string} historyKey
  * @returns {number}
  */
-function getHistoryLimit(historyKey) {
-  const config = loadConfig();
+function getHistoryLimit(historyKey, config = null) {
+  const cfg = config || loadConfig();
   // historyKey is either "chatId" or "chatId:threadId" - extract chatId
   const chatId = historyKey.includes(':') ? historyKey.split(':')[0] : historyKey;
-  const groupConfig = config.groups?.[chatId];
-  return groupConfig?.historyLimit || config.message?.context_messages || 5;
+  const groupConfig = cfg.groups?.[chatId];
+  return groupConfig?.historyLimit || cfg.message?.context_messages || 5;
 }
 
 /**
@@ -52,7 +52,7 @@ function getHistoryLimit(historyKey) {
  * @param {string} historyKey - From getHistoryKey()
  * @param {HistoryEntry} entry
  */
-export function recordHistoryEntry(historyKey, entry) {
+export function recordHistoryEntry(historyKey, entry, config = null) {
   if (!chatHistories.has(historyKey)) chatHistories.set(historyKey, []);
   const history = chatHistories.get(historyKey);
 
@@ -62,7 +62,7 @@ export function recordHistoryEntry(historyKey, entry) {
   }
 
   history.push(entry);
-  const limit = getHistoryLimit(historyKey);
+  const limit = getHistoryLimit(historyKey, config);
   if (history.length > limit * 2) {
     chatHistories.set(historyKey, history.slice(-limit));
   }
@@ -76,11 +76,11 @@ export function recordHistoryEntry(historyKey, entry) {
  * @param {number|string|null} [excludeMessageId] - Current message to exclude
  * @returns {HistoryEntry[]}
  */
-export function getHistory(historyKey, excludeMessageId) {
+export function getHistory(historyKey, excludeMessageId, config = null) {
   const history = chatHistories.get(historyKey);
   if (!history || history.length === 0) return [];
 
-  const limit = getHistoryLimit(historyKey);
+  const limit = getHistoryLimit(historyKey, config);
   const filtered = excludeMessageId
     ? history.filter(m => m.message_id !== excludeMessageId)
     : history;
@@ -97,7 +97,7 @@ export function getHistory(historyKey, excludeMessageId) {
  *
  * @param {string} historyKey - From getHistoryKey() (chatId or chatId:threadId)
  */
-export function ensureReplay(historyKey) {
+export function ensureReplay(historyKey, config = null) {
   historyKey = String(historyKey);
   if (_replayedKeys.has(historyKey)) return;
 
@@ -107,7 +107,7 @@ export function ensureReplay(historyKey) {
     return;
   }
 
-  const limit = getHistoryLimit(historyKey);
+  const limit = getHistoryLimit(historyKey, config);
 
   try {
     const content = fs.readFileSync(logFile, 'utf-8');
@@ -141,7 +141,7 @@ export function ensureReplay(historyKey) {
  * @param {string} chatId
  * @param {HistoryEntry} entry - Must include thread_id field
  */
-export function logAndRecord(chatId, entry) {
+export function logAndRecord(chatId, entry, config = null) {
   chatId = String(chatId);
   const hk = getHistoryKey(chatId, entry.thread_id || null);
 
@@ -154,7 +154,7 @@ export function logAndRecord(chatId, entry) {
   }
 
   // In-memory history
-  recordHistoryEntry(hk, entry);
+  recordHistoryEntry(hk, entry, config);
 }
 
 // ============================================================

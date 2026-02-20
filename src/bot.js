@@ -582,6 +582,7 @@ bot.on('photo', async (ctx) => {
 
   // For private chat: must be authorized, download immediately
   if (chatType === 'private') {
+    if (!hasOwner(config)) bindOwner(config, ctx);
     if (!isAuthorized(config, ctx)) {
       ctx.reply('Sorry, this bot is private.').catch(() => {});
       return;
@@ -753,6 +754,7 @@ bot.on('document', async (ctx) => {
 
   // For private chat: must be authorized, download immediately
   if (chatType === 'private') {
+    if (!hasOwner(config)) bindOwner(config, ctx);
     if (!isAuthorized(config, ctx)) {
       ctx.reply('Sorry, this bot is private.').catch(() => {});
       return;

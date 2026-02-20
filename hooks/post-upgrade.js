@@ -229,11 +229,14 @@ if (fs.existsSync(logsDir)) {
 
       if (threadLines.size === 0) continue;
 
-      // Write thread-specific files
+      // Write thread-specific files (atomic: write tmp then rename)
       const baseName = file.replace('.log', '');
       for (const [tid, tLines] of threadLines) {
         const threadFile = path.join(logsDir, `${baseName}_t_${tid}.log`);
-        fs.appendFileSync(threadFile, tLines.join('\n') + '\n');
+        const existing = fs.existsSync(threadFile) ? fs.readFileSync(threadFile, 'utf-8') : '';
+        const threadTmp = threadFile + '.tmp';
+        fs.writeFileSync(threadTmp, existing + tLines.join('\n') + '\n');
+        fs.renameSync(threadTmp, threadFile);
       }
 
       // Rewrite main file without thread entries (atomic: write tmp then rename)
