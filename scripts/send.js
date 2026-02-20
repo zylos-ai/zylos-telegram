@@ -9,7 +9,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { execSync, execFileSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import dotenv from 'dotenv';
 import { parseEndpoint } from '../src/lib/utils.js';
 import { DATA_DIR, loadConfig } from '../src/lib/config.js';
@@ -77,11 +77,10 @@ function apiRequest(method, params) {
     result = execFileSync('curl', args, { encoding: 'utf8', timeout: 35000 });
   } else {
     const jsonData = JSON.stringify(params);
-    let curlCmd = `curl -s --max-time 30 -X POST "${url}" -H "Content-Type: application/json" -d '${jsonData.replace(/'/g, "'\\''")}'`;
-    if (PROXY_URL) {
-      curlCmd = curlCmd.replace('curl ', `curl --proxy "${PROXY_URL}" `);
-    }
-    result = execSync(curlCmd, { encoding: 'utf8', timeout: 35000 });
+    const textArgs = ['-s', '--max-time', '30', '-X', 'POST', url,
+      '-H', 'Content-Type: application/json', '-d', jsonData];
+    if (PROXY_URL) textArgs.splice(1, 0, '--proxy', PROXY_URL);
+    result = execFileSync('curl', textArgs, { encoding: 'utf8', timeout: 35000 });
   }
   const response = JSON.parse(result);
   if (response.ok) return response.result;
@@ -166,8 +165,9 @@ function splitMessage(text, maxLength) {
       }
     }
 
-    chunks.push(remaining.substring(0, breakAt).trim());
+    const chunk = remaining.substring(0, breakAt).trim();
     remaining = remaining.substring(breakAt).trim();
+    if (chunk.length > 0) chunks.push(chunk);
   }
 
   return chunks;
@@ -280,14 +280,18 @@ async function recordOutgoing(text) {
       threadId: threadId || null,
       text: text.substring(0, 500)
     });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
     const resp = await fetch(`http://127.0.0.1:${port}/internal/record-outgoing`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Internal-Token': INTERNAL_TOKEN
       },
-      body
+      body,
+      signal: controller.signal
     });
+    clearTimeout(timer);
     if (!resp.ok) {
       console.warn(`[telegram] recordOutgoing failed: ${resp.status}`);
     }

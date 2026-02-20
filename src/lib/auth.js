@@ -30,7 +30,9 @@ export function bindOwner(config, ctx) {
     config.whitelist.chat_ids.push(userId);
   }
 
-  saveConfig(config);
+  if (!saveConfig(config)) {
+    console.error('[telegram] Config change succeeded in memory but failed to persist to disk');
+  }
   console.log(`[telegram] Owner bound: ${username || userId}`);
 
   return true;
@@ -85,7 +87,9 @@ export function addToWhitelist(config, chatId, username = null) {
     config.whitelist.usernames.push(username.toLowerCase());
   }
 
-  saveConfig(config);
+  if (!saveConfig(config)) {
+    console.error('[telegram] Config change succeeded in memory but failed to persist to disk');
+  }
   return true;
 }
 
@@ -96,7 +100,9 @@ export function removeFromWhitelist(config, chatId) {
   chatId = String(chatId);
 
   config.whitelist.chat_ids = config.whitelist.chat_ids.filter(id => id !== chatId);
-  saveConfig(config);
+  if (!saveConfig(config)) {
+    console.error('[telegram] Config change succeeded in memory but failed to persist to disk');
+  }
   return true;
 }
 
@@ -202,7 +208,9 @@ export function addGroup(config, chatId, name, mode = 'mention') {
     added_at: new Date().toISOString()
   };
 
-  saveConfig(config);
+  if (!saveConfig(config)) {
+    console.error('[telegram] Config change succeeded in memory but failed to persist to disk');
+  }
   console.log(`[telegram] Group added: ${name} (${chatId}) mode=${mode}`);
   return true;
 }
@@ -217,6 +225,8 @@ export function removeGroup(config, chatId) {
   chatId = String(chatId);
   if (!config.groups?.[chatId]) return false;
   delete config.groups[chatId];
-  saveConfig(config);
+  if (!saveConfig(config)) {
+    console.error('[telegram] Config change succeeded in memory but failed to persist to disk');
+  }
   return true;
 }

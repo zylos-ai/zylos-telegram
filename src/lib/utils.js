@@ -83,7 +83,11 @@ export function deepMergeDefaults(defaults, loaded) {
       typeof defaults[key] === 'object' &&
       !Array.isArray(defaults[key])
     ) {
-      result[key] = { ...defaults[key], ...(loaded[key] || {}) };
+      const loadedObj = loaded[key] || {};
+      const filtered = Object.fromEntries(
+        Object.entries(loadedObj).filter(([, v]) => v !== null)
+      );
+      result[key] = { ...defaults[key], ...filtered };
     }
   }
   return result;
