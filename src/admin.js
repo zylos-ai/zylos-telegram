@@ -85,7 +85,10 @@ const commands = {
 
     const config = loadConfig();
     config.groupPolicy = policy;
-    saveConfig(config);
+    if (!saveConfig(config)) {
+      console.error('[telegram] Failed to save config to disk');
+      process.exit(1);
+    }
     console.log(`Set groupPolicy=${policy}`);
     console.log('Run: pm2 restart zylos-telegram');
   },
@@ -103,7 +106,10 @@ const commands = {
     }
 
     config.groups[String(chatId)].mode = mode;
-    saveConfig(config);
+    if (!saveConfig(config)) {
+      console.error('[telegram] Failed to save config to disk');
+      process.exit(1);
+    }
     console.log(`Set mode for ${chatId}: ${mode}`);
     console.log('Run: pm2 restart zylos-telegram');
   },
@@ -121,7 +127,10 @@ const commands = {
     }
 
     config.groups[String(chatId)].allowFrom = userIds.map(String);
-    saveConfig(config);
+    if (!saveConfig(config)) {
+      console.error('[telegram] Failed to save config to disk');
+      process.exit(1);
+    }
     console.log(`Set allowFrom for ${chatId}: ${config.groups[String(chatId)].allowFrom.join(', ')}`);
     console.log('Run: pm2 restart zylos-telegram');
   },
@@ -140,7 +149,10 @@ const commands = {
     }
 
     config.groups[String(chatId)].historyLimit = parsedLimit;
-    saveConfig(config);
+    if (!saveConfig(config)) {
+      console.error('[telegram] Failed to save config to disk');
+      process.exit(1);
+    }
     console.log(`Set historyLimit for ${chatId}: ${parsedLimit}`);
     console.log('Run: pm2 restart zylos-telegram');
   },
@@ -166,7 +178,10 @@ const commands = {
     const key = type === 'chat_id' ? 'chat_ids' : 'usernames';
     if (!config.whitelist[key].includes(value)) {
       config.whitelist[key].push(value);
-      saveConfig(config);
+      if (!saveConfig(config)) {
+        console.error('[telegram] Failed to save config to disk');
+        process.exit(1);
+      }
       console.log(`Added ${type}: ${value} to whitelist`);
     } else {
       console.log(`${value} already in whitelist`);
@@ -188,7 +203,10 @@ const commands = {
     const index = config.whitelist[key].indexOf(value);
     if (index !== -1) {
       config.whitelist[key].splice(index, 1);
-      saveConfig(config);
+      if (!saveConfig(config)) {
+        console.error('[telegram] Failed to save config to disk');
+        process.exit(1);
+      }
       console.log(`Removed ${type}: ${value} from whitelist`);
     } else {
       console.log(`${value} not in whitelist`);

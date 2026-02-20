@@ -698,6 +698,7 @@ bot.on('photo', async (ctx) => {
       });
     } catch (err) {
       console.error(`[telegram] Photo download error: ${err.message}`);
+      bot.telegram.sendMessage(chatId, 'Failed to process photo.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
     }
     return;
   }
@@ -866,6 +867,7 @@ bot.on('document', async (ctx) => {
       });
     } catch (err) {
       console.error(`[telegram] Document download error: ${err.message}`);
+      bot.telegram.sendMessage(chatId, 'Failed to process document.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
     }
     return;
   }
@@ -981,6 +983,7 @@ internalServer.on('error', (err) => {
 });
 
 internalServer.listen(INTERNAL_PORT, '127.0.0.1', () => {
+  internalServerRetries = 0;
   console.log(`[telegram] Internal server on 127.0.0.1:${INTERNAL_PORT}`);
 });
 
