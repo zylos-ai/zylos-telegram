@@ -108,7 +108,7 @@ function sendToC4(source, endpoint, content, onReject) {
 
   const cmd = `node "${C4_RECEIVE}" --channel "${source}" --endpoint "${endpoint}" --json --content '${safeContent}'`;
 
-  exec(cmd, { encoding: 'utf8' }, (error, stdout) => {
+  exec(cmd, { encoding: 'utf8', timeout: 30000 }, (error, stdout) => {
     if (!error) {
       console.log(`[telegram] Sent to C4: ${content.substring(0, 50)}...`);
       return;
@@ -123,7 +123,7 @@ function sendToC4(source, endpoint, content, onReject) {
     // Unexpected failure (node crash, etc.) - retry once
     console.warn(`[telegram] C4 send failed, retrying in 2s: ${error.message}`);
     setTimeout(() => {
-      exec(cmd, { encoding: 'utf8' }, (retryError, retryStdout) => {
+      exec(cmd, { encoding: 'utf8', timeout: 30000 }, (retryError, retryStdout) => {
         if (!retryError) {
           console.log(`[telegram] Sent to C4 (retry): ${content.substring(0, 50)}...`);
           return;
@@ -209,9 +209,12 @@ function startTypingIndicator(chatId, correlationId, threadId = null) {
     bot.telegram.sendChatAction(chatId, 'typing', opts).catch(() => {});
   }, 5000);
 
+  const [typChatId, typMsgId] = correlationId.split(':');
   activeTypingIndicators.set(correlationId, {
     interval,
-    startedAt: Date.now()
+    startedAt: Date.now(),
+    chatId: Number(typChatId),
+    messageId: Number(typMsgId)
   });
 }
 
@@ -271,6 +274,9 @@ const typingPollInterval = setInterval(() => {
   const now = Date.now();
   for (const [id, state] of activeTypingIndicators) {
     if (now - state.startedAt > 120000) {
+      if (state.chatId && state.messageId) {
+        clearReaction(state.chatId, state.messageId);
+      }
       stopTypingIndicator(id);
       console.log(`[telegram] Typing auto-timeout for ${id}`);
     }
@@ -656,7 +662,10 @@ bot.on('photo', async (ctx) => {
 
   // Smart/mention groups: only download when @mentioned in caption
   if (isBotMentioned(ctx)) {
-    if (!config.features.download_media) return;
+    if (!config.features.download_media) {
+      bot.telegram.sendMessage(chatId, 'Media download is disabled.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+      return;
+    }
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) {
       console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (photo)`);
       return;
@@ -821,7 +830,10 @@ bot.on('document', async (ctx) => {
 
   // Smart/mention groups: only download when @mentioned in caption
   if (isBotMentioned(ctx)) {
-    if (!config.features.download_media) return;
+    if (!config.features.download_media) {
+      bot.telegram.sendMessage(chatId, 'Media download is disabled.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+      return;
+    }
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) {
       console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (document)`);
       return;
@@ -907,7 +919,7 @@ const internalServer = http.createServer((req, res) => {
       return;
     }
 
-    let body = '';
+    const chunks = [];
     let size = 0;
     let aborted = false;
     req.on('data', chunk => {
@@ -919,11 +931,12 @@ const internalServer = http.createServer((req, res) => {
         req.destroy();
         return;
       }
-      body += chunk;
+      chunks.push(chunk);
     });
 
     req.on('end', () => {
       if (res.headersSent) return;
+      const body = Buffer.concat(chunks).toString('utf8');
       let parsed;
       try {
         parsed = JSON.parse(body);
@@ -953,10 +966,15 @@ const internalServer = http.createServer((req, res) => {
   }
 });
 
+let internalServerRetries = 0;
 internalServer.on('error', (err) => {
   console.error(`[telegram] Internal server error: ${err.message}`);
   if (err.code === 'EADDRINUSE') {
-    console.error(`[telegram] Port ${INTERNAL_PORT} in use, retrying in 3s...`);
+    if (++internalServerRetries >= 5) {
+      console.error(`[telegram] Internal server: gave up after 5 retries, outgoing recording disabled`);
+      return;
+    }
+    console.error(`[telegram] Port ${INTERNAL_PORT} in use, retrying in 3s (${internalServerRetries}/5)...`);
     setTimeout(() => internalServer.listen(INTERNAL_PORT, '127.0.0.1'), 3000);
   }
 });

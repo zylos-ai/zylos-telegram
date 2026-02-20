@@ -219,7 +219,7 @@ export function formatMessage(opts) {
   let message = parts.join('');
 
   if (mediaPath) {
-    message += ` ---- file: ${mediaPath}`;
+    message += ` ---- file: ${escapeXml(mediaPath)}`;
   }
 
   return message;
