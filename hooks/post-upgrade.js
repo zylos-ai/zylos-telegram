@@ -181,9 +181,11 @@ if (fs.existsSync(configPath)) {
       migrations.push('Created typing/ directory');
     }
 
-    // Save if migrated
+    // Save if migrated (atomic: write tmp then rename)
     if (migrated) {
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      const tmpPath = configPath + '.tmp';
+      fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2));
+      fs.renameSync(tmpPath, configPath);
       console.log('Config migrations applied:');
       migrations.forEach(m => console.log('  - ' + m));
     } else {
@@ -234,8 +236,10 @@ if (fs.existsSync(logsDir)) {
         fs.appendFileSync(threadFile, tLines.join('\n') + '\n');
       }
 
-      // Rewrite main file without thread entries
-      fs.writeFileSync(filePath, mainLines.join('\n') + (mainLines.length ? '\n' : ''));
+      // Rewrite main file without thread entries (atomic: write tmp then rename)
+      const tmpFile = filePath + '.tmp';
+      fs.writeFileSync(tmpFile, mainLines.join('\n') + (mainLines.length ? '\n' : ''));
+      fs.renameSync(tmpFile, filePath);
       splitCount++;
     }
 

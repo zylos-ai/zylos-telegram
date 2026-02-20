@@ -763,8 +763,9 @@ bot.on('document', async (ctx) => {
     }
 
     const doc = ctx.message.document;
-    const caption = ctx.message.caption || `[sent a file: ${doc.file_name}]`;
-    const fileInfo = `[file: ${doc.file_name}, file_id: ${doc.file_id}, msg_id: ${messageId}]`;
+    const fileName = doc.file_name || 'file';
+    const caption = ctx.message.caption || `[sent a file: ${fileName}]`;
+    const fileInfo = `[file: ${fileName}, file_id: ${doc.file_id}, msg_id: ${messageId}]`;
     const logEntry = {
       timestamp: new Date().toISOString(),
       message_id: messageId,
@@ -816,8 +817,9 @@ bot.on('document', async (ctx) => {
 
   // Build log text with file metadata for context
   const doc = ctx.message.document;
+  const fileName = doc.file_name || 'file';
   const caption = ctx.message.caption || '';
-  const fileInfo = `[file: ${doc.file_name}, file_id: ${doc.file_id}, msg_id: ${messageId}]`;
+  const fileInfo = `[file: ${fileName}, file_id: ${doc.file_id}, msg_id: ${messageId}]`;
   const logText = caption ? `${caption}\n${fileInfo}` : fileInfo;
   const logEntry = {
     timestamp: new Date().toISOString(),
@@ -854,7 +856,7 @@ bot.on('document', async (ctx) => {
         chatType,
         groupName: getGroupName(config, chatId, ctx.chat.title),
         userName,
-        text: caption ? replaceBotMention(ctx) : `[sent a file: ${doc.file_name}]`,
+        text: caption ? replaceBotMention(ctx) : `[sent a file: ${fileName}]`,
         contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId),
         quotedContent: getReplyToContext(ctx),
         mediaPath: localPath,
@@ -889,7 +891,7 @@ bot.on('document', async (ctx) => {
       chatType,
       groupName: getGroupName(config, chatId, ctx.chat.title),
       userName,
-      text: caption ? `${caption}\n${fileInfo}` : `[sent a file: ${doc.file_name}]\n${fileInfo}`,
+      text: caption ? `${caption}\n${fileInfo}` : `[sent a file: ${fileName}]\n${fileInfo}`,
       contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId),
       quotedContent: getReplyToContext(ctx),
       mediaPath: null,
