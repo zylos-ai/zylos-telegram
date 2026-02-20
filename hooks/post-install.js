@@ -43,7 +43,9 @@ console.log('  - typing/');
 const configPath = path.join(DATA_DIR, 'config.json');
 if (!fs.existsSync(configPath)) {
   console.log('\nCreating default config.json...');
-  fs.writeFileSync(configPath, JSON.stringify(INITIAL_CONFIG, null, 2));
+  const tmpPath = configPath + '.tmp';
+  fs.writeFileSync(tmpPath, JSON.stringify(INITIAL_CONFIG, null, 2));
+  fs.renameSync(tmpPath, configPath);
   console.log('  - config.json created');
 } else {
   console.log('\nConfig already exists, skipping.');

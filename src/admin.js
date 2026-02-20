@@ -71,10 +71,11 @@ const commands = {
     const removed = removeGroup(config, chatId);
     if (removed) {
       console.log(`Removed group: ${chatId}`);
+      console.log('Run: pm2 restart zylos-telegram');
     } else {
-      console.log(`Group ${chatId} not found`);
+      console.error(`Group ${chatId} not found`);
+      process.exit(1);
     }
-    console.log('Run: pm2 restart zylos-telegram');
   },
 
   'set-group-policy': (policy) => {
@@ -101,8 +102,8 @@ const commands = {
 
     const config = loadConfig();
     if (!config.groups?.[String(chatId)]) {
-      console.log(`Group ${chatId} not found`);
-      return;
+      console.error(`Group ${chatId} not found`);
+      process.exit(1);
     }
 
     config.groups[String(chatId)].mode = mode;
@@ -122,8 +123,8 @@ const commands = {
 
     const config = loadConfig();
     if (!config.groups?.[String(chatId)]) {
-      console.log(`Group ${chatId} not found`);
-      return;
+      console.error(`Group ${chatId} not found`);
+      process.exit(1);
     }
 
     config.groups[String(chatId)].allowFrom = userIds.map(String);
@@ -144,8 +145,8 @@ const commands = {
 
     const config = loadConfig();
     if (!config.groups?.[String(chatId)]) {
-      console.log(`Group ${chatId} not found`);
-      return;
+      console.error(`Group ${chatId} not found`);
+      process.exit(1);
     }
 
     config.groups[String(chatId)].historyLimit = parsedLimit;

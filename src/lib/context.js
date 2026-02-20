@@ -110,7 +110,23 @@ export function ensureReplay(historyKey, config = null) {
   const limit = getHistoryLimit(historyKey, config);
 
   try {
-    const content = fs.readFileSync(logFile, 'utf-8');
+    // Read only the tail of the file to avoid loading large logs into memory
+    const stat = fs.statSync(logFile);
+    const BYTES_PER_ENTRY = 256;
+    const readSize = Math.min(stat.size, limit * BYTES_PER_ENTRY);
+    let content;
+    if (readSize < stat.size) {
+      const buf = Buffer.alloc(readSize);
+      const fd = fs.openSync(logFile, 'r');
+      fs.readSync(fd, buf, 0, readSize, stat.size - readSize);
+      fs.closeSync(fd);
+      // Drop first (potentially partial) line
+      const text = buf.toString('utf-8');
+      const firstNewline = text.indexOf('\n');
+      content = firstNewline !== -1 ? text.substring(firstNewline + 1) : text;
+    } else {
+      content = fs.readFileSync(logFile, 'utf-8');
+    }
     const lines = content.trim().split('\n').filter(l => l);
     const tail = lines.slice(-limit);
 

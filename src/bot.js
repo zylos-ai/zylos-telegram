@@ -335,7 +335,8 @@ function notifyOwnerPendingGroup(chatId, chatTitle, addedBy) {
   if (!config.owner?.chat_id) return;
 
   const adminPath = path.join(__dirname, 'admin.js');
-  const message = `[System] Bot was added to a group, pending approval:\nGroup: ${chatTitle}\nID: ${chatId}\nAdded by: ${addedBy}\n\nTo approve, run:\nnode "${adminPath}" add-group "${chatId}" "${chatTitle}" mention`;
+  const safeTitle = JSON.stringify(chatTitle || 'group');
+  const message = `[System] Bot was added to a group, pending approval:\nGroup: ${chatTitle}\nID: ${chatId}\nAdded by: ${addedBy}\n\nTo approve, run:\nnode "${adminPath}" add-group "${chatId}" ${safeTitle} mention`;
 
   const sendPath = path.join(__dirname, '..', 'scripts', 'send.js');
   // Use async execFile to avoid deadlock: send.js calls recordOutgoing()
@@ -464,7 +465,7 @@ bot.on('text', (ctx) => {
       return;
     }
 
-    logAndRecord(chatId, logEntry);
+    logAndRecord(chatId, logEntry, config);
     const quotedContent = getReplyToContext(ctx);
     const endpoint = buildEndpoint(chatId, { messageId });
     const correlationId = `${chatId}:${messageId}`;
@@ -498,10 +499,10 @@ bot.on('text', (ctx) => {
     const senderIsOwner = isOwner(config, ctx);
 
     // Replay log history before recording new entry to preserve chronological order
-    ensureReplay(getHistoryKey(chatId, threadId));
+    ensureReplay(getHistoryKey(chatId, threadId), config);
 
     if (isAllowed) {
-      logAndRecord(chatId, logEntry);
+      logAndRecord(chatId, logEntry, config);
     }
 
     const policy = config.groupPolicy || 'allowlist';
@@ -524,11 +525,11 @@ bot.on('text', (ctx) => {
 
     // Log owner messages from non-allowed groups only when responding
     if (!isAllowed && senderIsOwner) {
-      logAndRecord(chatId, logEntry);
+      logAndRecord(chatId, logEntry, config);
     }
 
     const historyKey = getHistoryKey(chatId, threadId);
-    const contextMessages = getHistory(historyKey, messageId);
+    const contextMessages = getHistory(historyKey, messageId, config);
     const quotedContent = getReplyToContext(ctx);
     const groupName = getGroupName(config, chatId, ctx.chat.title);
 
@@ -572,7 +573,7 @@ bot.on('text', (ctx) => {
  * Handle photo messages
  */
 bot.on('photo', async (ctx) => {
-  config = loadConfig();
+  const config = loadConfig();
 
   const chatType = ctx.chat.type;
   const chatId = ctx.chat.id;
@@ -604,7 +605,7 @@ bot.on('photo', async (ctx) => {
       text: `${caption}\n${photoInfo}`,
       thread_id: threadId
     };
-    logAndRecord(chatId, logEntry);
+    logAndRecord(chatId, logEntry, config);
 
     try {
       const localPath = await downloadPhoto(ctx);
@@ -643,7 +644,7 @@ bot.on('photo', async (ctx) => {
   if (!isAllowed && !isSmart) return;
 
   // Replay log history before recording new entry to preserve chronological order
-  ensureReplay(getHistoryKey(chatId, threadId));
+  ensureReplay(getHistoryKey(chatId, threadId), config);
 
   // Build log text with photo metadata for context
   const photos = ctx.message.photo;
@@ -659,7 +660,7 @@ bot.on('photo', async (ctx) => {
     text: logText,
     thread_id: threadId
   };
-  logAndRecord(chatId, logEntry);
+  logAndRecord(chatId, logEntry, config);
 
   // Smart/mention groups: only download when @mentioned in caption
   if (isBotMentioned(ctx)) {
@@ -687,7 +688,7 @@ bot.on('photo', async (ctx) => {
         groupName: getGroupName(config, chatId, ctx.chat.title),
         userName,
         text: caption ? replaceBotMention(ctx) : '[sent a photo]',
-        contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId),
+        contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
         quotedContent: getReplyToContext(ctx),
         mediaPath: localPath,
         isThread: !!threadId
@@ -722,7 +723,7 @@ bot.on('photo', async (ctx) => {
       groupName: getGroupName(config, chatId, ctx.chat.title),
       userName,
       text: caption ? `${caption}\n${photoInfo}` : `[sent a photo]\n${photoInfo}`,
-      contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId),
+      contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
       quotedContent: getReplyToContext(ctx),
       mediaPath: null,
       isThread: !!threadId,
@@ -744,7 +745,7 @@ bot.on('photo', async (ctx) => {
  * Handle document messages
  */
 bot.on('document', async (ctx) => {
-  config = loadConfig();
+  const config = loadConfig();
 
   const chatType = ctx.chat.type;
   const chatId = ctx.chat.id;
@@ -776,7 +777,7 @@ bot.on('document', async (ctx) => {
       text: `${caption}\n${fileInfo}`,
       thread_id: threadId
     };
-    logAndRecord(chatId, logEntry);
+    logAndRecord(chatId, logEntry, config);
 
     try {
       const localPath = await downloadDocument(ctx);
@@ -815,7 +816,7 @@ bot.on('document', async (ctx) => {
   if (!isAllowed && !isSmart) return;
 
   // Replay log history before recording new entry to preserve chronological order
-  ensureReplay(getHistoryKey(chatId, threadId));
+  ensureReplay(getHistoryKey(chatId, threadId), config);
 
   // Build log text with file metadata for context
   const doc = ctx.message.document;
@@ -831,7 +832,7 @@ bot.on('document', async (ctx) => {
     text: logText,
     thread_id: threadId
   };
-  logAndRecord(chatId, logEntry);
+  logAndRecord(chatId, logEntry, config);
 
   // Smart/mention groups: only download when @mentioned in caption
   if (isBotMentioned(ctx)) {
@@ -859,7 +860,7 @@ bot.on('document', async (ctx) => {
         groupName: getGroupName(config, chatId, ctx.chat.title),
         userName,
         text: caption ? replaceBotMention(ctx) : `[sent a file: ${fileName}]`,
-        contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId),
+        contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
         quotedContent: getReplyToContext(ctx),
         mediaPath: localPath,
         isThread: !!threadId
@@ -894,7 +895,7 @@ bot.on('document', async (ctx) => {
       groupName: getGroupName(config, chatId, ctx.chat.title),
       userName,
       text: caption ? `${caption}\n${fileInfo}` : `[sent a file: ${fileName}]\n${fileInfo}`,
-      contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId),
+      contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
       quotedContent: getReplyToContext(ctx),
       mediaPath: null,
       isThread: !!threadId,
