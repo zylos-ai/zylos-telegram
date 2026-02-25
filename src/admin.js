@@ -271,7 +271,7 @@ const commands = {
     commands['add-dm-allow'](`${prefix}${value}`);
   },
   'remove-whitelist': (type, value) => {
-    if (!type || !value) {
+    if (!type || !value || !['chat_id', 'username'].includes(type)) {
       console.error('Usage: admin.js remove-whitelist <chat_id|username> <value> (legacy, use remove-dm-allow instead)');
       process.exit(1);
     }
