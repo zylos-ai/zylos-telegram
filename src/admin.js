@@ -214,20 +214,36 @@ const commands = {
       process.exit(1);
     }
     const config = loadConfig();
-    if (!Array.isArray(config.dmAllowFrom)) {
-      console.log('No dmAllowFrom configured');
-      return;
+    let modified = false;
+    if (Array.isArray(config.dmAllowFrom)) {
+      const idx = config.dmAllowFrom.indexOf(value);
+      if (idx !== -1) {
+        config.dmAllowFrom.splice(idx, 1);
+        modified = true;
+        console.log(`Removed ${value} from dmAllowFrom`);
+      }
     }
-    const idx = config.dmAllowFrom.indexOf(value);
-    if (idx !== -1) {
-      config.dmAllowFrom.splice(idx, 1);
+    // Also clean up legacy whitelist entries to prevent isDmAllowed re-authorization
+    if (config.whitelist?.chat_ids) {
+      const idx = config.whitelist.chat_ids.findIndex(id => String(id) === value);
+      if (idx >= 0) { config.whitelist.chat_ids.splice(idx, 1); modified = true; console.log(`Also removed from legacy whitelist.chat_ids`); }
+    }
+    if (value.startsWith('@') && config.whitelist?.usernames) {
+      const username = value.slice(1).toLowerCase();
+      const idx = config.whitelist.usernames.findIndex(u => u.toLowerCase() === username);
+      if (idx >= 0) { config.whitelist.usernames.splice(idx, 1); modified = true; console.log(`Also removed from legacy whitelist.usernames`); }
+    } else if (!value.startsWith('@') && config.whitelist?.usernames) {
+      // Also try matching without @ prefix for direct username removal
+      const idx = config.whitelist.usernames.findIndex(u => u.toLowerCase() === value.toLowerCase());
+      if (idx >= 0) { config.whitelist.usernames.splice(idx, 1); modified = true; console.log(`Also removed from legacy whitelist.usernames`); }
+    }
+    if (modified) {
       if (!saveConfig(config)) {
         console.error('[telegram] Failed to save config to disk');
         process.exit(1);
       }
-      console.log(`Removed ${value} from dmAllowFrom`);
     } else {
-      console.log(`${value} not in dmAllowFrom`);
+      console.log(`${value} not found in dmAllowFrom or legacy whitelist`);
     }
   },
 
