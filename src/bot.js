@@ -539,13 +539,13 @@ bot.on('text', (ctx) => {
     const correlationId = `${chatId}:${messageId}`;
     const smartNoMention = isSmart && !mentioned;
 
-    // Eyes reaction for all group messages; typing only when @mentioned
-    bot.telegram.callApi('setMessageReaction', {
-      chat_id: chatId,
-      message_id: messageId,
-      reaction: [{ type: 'emoji', emoji: '👀' }]
-    }).catch(() => {});
+    // Eyes reaction + typing only when bot will respond (not smart-no-mention)
     if (!smartNoMention) {
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: [{ type: 'emoji', emoji: '👀' }]
+      }).catch(() => {});
       startTypingIndicator(chatId, correlationId, threadId);
     }
 
@@ -705,18 +705,12 @@ bot.on('photo', async (ctx) => {
     return;
   }
 
-  // Not @mentioned in smart group: forward without downloading, eyes reaction
+  // Not @mentioned in smart group: forward without downloading, no reaction
   if (isSmart) {
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
 
     const endpoint = buildEndpoint(chatId, { messageId, threadId });
     const correlationId = `${chatId}:${messageId}`;
-
-    bot.telegram.callApi('setMessageReaction', {
-      chat_id: chatId,
-      message_id: messageId,
-      reaction: [{ type: 'emoji', emoji: '👀' }]
-    }).catch(() => {});
 
     const msg = formatMessage({
       chatType,
@@ -877,18 +871,12 @@ bot.on('document', async (ctx) => {
     return;
   }
 
-  // Not @mentioned in smart group: forward without downloading, eyes reaction
+  // Not @mentioned in smart group: forward without downloading, no reaction
   if (isSmart) {
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
 
     const endpoint = buildEndpoint(chatId, { messageId, threadId });
     const correlationId = `${chatId}:${messageId}`;
-
-    bot.telegram.callApi('setMessageReaction', {
-      chat_id: chatId,
-      message_id: messageId,
-      reaction: [{ type: 'emoji', emoji: '👀' }]
-    }).catch(() => {});
 
     const msg = formatMessage({
       chatType,
