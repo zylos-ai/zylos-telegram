@@ -535,9 +535,14 @@ bot.on('text', (ctx) => {
       (policy !== 'disabled' && senderIsOwner && mentioned);
 
     if (!shouldRespond) {
-      if (!isAllowed && mentioned) {
-        console.log(`[telegram] Group not allowed: ${chatId}, rejecting`);
-        ctx.reply("Sorry, I'm not available in this group.").catch(() => {});
+      if (mentioned) {
+        if (policy === 'disabled') {
+          console.log(`[telegram] Group policy disabled, rejecting @mention from ${chatId}`);
+          ctx.reply("Sorry, group chat is currently disabled.").catch(() => {});
+        } else if (!isAllowed) {
+          console.log(`[telegram] Group not allowed: ${chatId}, rejecting`);
+          ctx.reply("Sorry, I'm not available in this group.").catch(() => {});
+        }
       }
       return;
     }
