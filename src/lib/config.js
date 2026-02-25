@@ -48,6 +48,12 @@ export function loadConfig() {
       } else if (hasEntries || wl.enabled === true) {
         // Has entries or explicitly enabled → allowlist
         config.dmPolicy = 'allowlist';
+        // Populate dmAllowFrom from legacy entries so remove-dm-allow works
+        if (hasEntries && !('dmAllowFrom' in parsed)) {
+          const legacyIds = (wl.chat_ids || []).map(String);
+          const legacyUsers = (wl.usernames || []).map(u => `@${u.toLowerCase()}`);
+          config.dmAllowFrom = [...legacyIds, ...legacyUsers];
+        }
       } else {
         // No entries, no explicit enabled flag → restrictive default
         config.dmPolicy = 'owner';

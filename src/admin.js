@@ -234,7 +234,7 @@ const commands = {
   // Legacy whitelist commands → mapped to dmPolicy
   'list-whitelist': () => commands['list-dm-allow'](),
   'add-whitelist': (type, value) => {
-    if (!type || !value) {
+    if (!type || !value || !['chat_id', 'username'].includes(type)) {
       console.error('Usage: admin.js add-whitelist <chat_id|username> <value> (legacy, use add-dm-allow instead)');
       process.exit(1);
     }
