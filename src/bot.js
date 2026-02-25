@@ -61,7 +61,9 @@ const C4_RECEIVE = path.join(process.env.HOME, 'zylos/.claude/skills/comm-bridge
 const TYPING_DIR = path.join(DATA_DIR, 'typing');
 fs.mkdirSync(TYPING_DIR, { recursive: true });
 
-/** @type {Map<string, { interval: NodeJS.Timeout, startedAt: number }>} */
+const TYPING_TIMEOUT = 120 * 1000; // 120 seconds max
+
+/** @type {Map<string, { interval: NodeJS.Timeout, timeout: NodeJS.Timeout, startedAt: number, chatId: number, messageId: number }>} */
 const activeTypingIndicators = new Map();
 
 // User cache init
@@ -82,14 +84,23 @@ function parseC4Response(stdout) {
 }
 
 /**
- * Remove eyes reaction from a message (best-effort, fire-and-forget).
+ * Remove eyes reaction from a message (with retry on failure).
  */
 function clearReaction(chatId, messageId) {
   bot.telegram.callApi('setMessageReaction', {
     chat_id: chatId,
     message_id: messageId,
     reaction: []
-  }).catch(() => {});
+  }).catch(() => {
+    // Retry once after 500ms
+    setTimeout(() => {
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: []
+      }).catch(() => {});
+    }, 500);
+  });
 }
 
 /**
@@ -210,11 +221,22 @@ function startTypingIndicator(chatId, correlationId, threadId = null) {
   }, 5000);
 
   const [typChatId, typMsgId] = correlationId.split(':');
+  const numChatId = Number(typChatId);
+  const numMsgId = Number(typMsgId);
+
+  // Per-indicator timeout (exact, like Lark)
+  const timeout = setTimeout(() => {
+    clearReaction(numChatId, numMsgId);
+    stopTypingIndicator(correlationId);
+    console.log(`[telegram] Typing auto-timeout for ${correlationId}`);
+  }, TYPING_TIMEOUT);
+
   activeTypingIndicators.set(correlationId, {
     interval,
+    timeout,
     startedAt: Date.now(),
-    chatId: Number(typChatId),
-    messageId: Number(typMsgId)
+    chatId: numChatId,
+    messageId: numMsgId
   });
 }
 
@@ -227,6 +249,7 @@ function stopTypingIndicator(correlationId) {
   const state = activeTypingIndicators.get(correlationId);
   if (!state) return;
   clearInterval(state.interval);
+  if (state.timeout) clearTimeout(state.timeout);
   activeTypingIndicators.delete(correlationId);
 }
 
@@ -1007,7 +1030,21 @@ function cleanup() {
   clearInterval(typingPollInterval);
   clearInterval(cachePersistInterval);
   if (typingWatcher) typingWatcher.close();
-  for (const [id] of activeTypingIndicators) stopTypingIndicator(id);
+
+  // Actively clear reactions + stop typing indicators (like Lark)
+  for (const [id, state] of activeTypingIndicators) {
+    if (state.chatId && state.messageId) {
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: state.chatId,
+        message_id: state.messageId,
+        reaction: []
+      }).catch(() => {});
+    }
+    clearInterval(state.interval);
+    if (state.timeout) clearTimeout(state.timeout);
+  }
+  activeTypingIndicators.clear();
+
   internalServer.close();
 }
 process.once('SIGINT', () => {
