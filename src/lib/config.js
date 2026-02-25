@@ -18,8 +18,9 @@ export const DATA_DIR = path.join(HOME, 'zylos/components/telegram');
 export const DEFAULT_CONFIG = {
   enabled: true,
   owner: { chat_id: null, username: null, bound_at: null },
-  whitelist: { chat_ids: [], usernames: [] },
-  // New v0.2.0 group policy (replaces allowed_groups/smart_groups after migration)
+  dmPolicy: 'owner',          // 'open' | 'allowlist' | 'owner'
+  dmAllowFrom: [],            // chat_ids or @usernames allowed to DM (when dmPolicy=allowlist)
+  whitelist: { chat_ids: [], usernames: [] },  // legacy, kept for backward compat
   groupPolicy: 'allowlist',   // 'disabled' | 'allowlist' | 'open'
   groups: {},                 // { [chatId]: { name, mode, allowFrom, historyLimit, added_at } }
   features: {

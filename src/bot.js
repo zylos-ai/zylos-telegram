@@ -15,7 +15,7 @@ import { fileURLToPath } from 'url';
 import { loadConfig, getEnv, DATA_DIR } from './lib/config.js';
 import { getHistoryKey } from './lib/utils.js';
 import {
-  hasOwner, bindOwner, isAuthorized, isOwner,
+  hasOwner, bindOwner, isDmAllowed, isOwner,
   isGroupAllowed, isSmartGroup, isSenderAllowed,
   getGroupName, addGroup
 } from './lib/auth.js';
@@ -426,7 +426,7 @@ bot.start((ctx) => {
     return;
   }
 
-  if (!isAuthorized(config, ctx)) {
+  if (!isDmAllowed(config, ctx)) {
     ctx.reply('Sorry, this bot is private.').catch(() => {});
     console.log(`[telegram] Unauthorized /start: ${ctx.from.username || ctx.chat.id}`);
     return;
@@ -460,7 +460,7 @@ bot.on('text', (ctx) => {
   // === PRIVATE CHAT ===
   if (chatType === 'private') {
     if (!hasOwner(config)) bindOwner(config, ctx);
-    if (!isAuthorized(config, ctx)) {
+    if (!isDmAllowed(config, ctx)) {
       ctx.reply('Sorry, this bot is private.').catch(() => {});
       return;
     }
@@ -584,7 +584,7 @@ bot.on('photo', async (ctx) => {
   // For private chat: must be authorized, download immediately
   if (chatType === 'private') {
     if (!hasOwner(config)) bindOwner(config, ctx);
-    if (!isAuthorized(config, ctx)) {
+    if (!isDmAllowed(config, ctx)) {
       ctx.reply('Sorry, this bot is private.').catch(() => {});
       return;
     }
@@ -756,7 +756,7 @@ bot.on('document', async (ctx) => {
   // For private chat: must be authorized, download immediately
   if (chatType === 'private') {
     if (!hasOwner(config)) bindOwner(config, ctx);
-    if (!isAuthorized(config, ctx)) {
+    if (!isDmAllowed(config, ctx)) {
       ctx.reply('Sorry, this bot is private.').catch(() => {});
       return;
     }

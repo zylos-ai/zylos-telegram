@@ -1,6 +1,6 @@
 /**
  * Authentication module for zylos-telegram
- * Handles owner auto-binding and whitelist verification
+ * Handles owner auto-binding and DM/group access control
  */
 
 import { saveConfig } from './config.js';
@@ -25,8 +25,13 @@ export function bindOwner(config, ctx) {
     bound_at: new Date().toISOString()
   };
 
-  // Auto-add owner to whitelist (in private chat, from.id === chat.id)
-  if (!config.whitelist.chat_ids.includes(userId)) {
+  // Auto-add owner to dmAllowFrom
+  if (!Array.isArray(config.dmAllowFrom)) config.dmAllowFrom = [];
+  if (!config.dmAllowFrom.includes(userId)) {
+    config.dmAllowFrom.push(userId);
+  }
+  // Also maintain legacy whitelist for backward compat
+  if (config.whitelist?.chat_ids && !config.whitelist.chat_ids.includes(userId)) {
     config.whitelist.chat_ids.push(userId);
   }
 
@@ -47,31 +52,44 @@ export function isOwner(config, ctx) {
 }
 
 /**
- * Check if user is in whitelist
+ * Check DM access — uses dmPolicy + dmAllowFrom
+ * Replaces legacy isWhitelisted/isAuthorized for private chat access control.
  */
-export function isWhitelisted(config, ctx) {
+export function isDmAllowed(config, ctx) {
+  if (isOwner(config, ctx)) return true;
+  const policy = config.dmPolicy || 'owner';
+  if (policy === 'open') return true;
+  if (policy === 'owner') return false;
+  // policy === 'allowlist'
   const chatId = String(ctx.chat.id);
   const username = ctx.from.username?.toLowerCase();
-
-  // Check chat_id
-  if (config.whitelist.chat_ids.includes(chatId)) {
-    return true;
+  const allowFrom = (config.dmAllowFrom || []).map(String);
+  // Backward compat: also check legacy whitelist
+  if (config.whitelist?.chat_ids?.length) {
+    for (const id of config.whitelist.chat_ids) {
+      if (!allowFrom.includes(String(id))) allowFrom.push(String(id));
+    }
   }
-
-  // Check username
-  if (username && config.whitelist.usernames.some(u => u.toLowerCase() === username)) {
-    return true;
+  if (config.whitelist?.usernames?.length) {
+    for (const u of config.whitelist.usernames) {
+      const prefixed = `@${u.toLowerCase()}`;
+      if (!allowFrom.some(a => a.toLowerCase() === prefixed) && !allowFrom.some(a => a.toLowerCase() === u.toLowerCase())) {
+        allowFrom.push(prefixed);
+      }
+    }
   }
-
+  // Check chat_id match
+  if (allowFrom.includes(chatId)) return true;
+  // Check username match (with or without @ prefix)
+  if (username) {
+    if (allowFrom.some(a => a.toLowerCase() === `@${username}` || a.toLowerCase() === username)) return true;
+  }
   return false;
 }
 
-/**
- * Check if user is authorized (owner or whitelisted)
- */
-export function isAuthorized(config, ctx) {
-  return isOwner(config, ctx) || isWhitelisted(config, ctx);
-}
+// Legacy aliases for backward compatibility
+export function isWhitelisted(config, ctx) { return isDmAllowed(config, ctx); }
+export function isAuthorized(config, ctx) { return isDmAllowed(config, ctx); }
 
 // ============================================================
 // Group policy (v0.2.0 - replaces allowed_groups/smart_groups)
