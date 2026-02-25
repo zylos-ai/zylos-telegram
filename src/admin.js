@@ -227,7 +227,7 @@ const commands = {
       // Remove ALL matching entries (case-insensitive, with/without @ prefix)
       const valueLower = value.toLowerCase();
       const matches = a => {
-        const aLower = a.toLowerCase();
+        const aLower = String(a).toLowerCase();
         return aLower === valueLower || aLower === `@${valueLower}` || `@${aLower}` === valueLower;
       };
       const removed = config.dmAllowFrom.filter(matches);
@@ -237,19 +237,17 @@ const commands = {
         console.log(`Removed from dmAllowFrom: ${removed.join(', ')}`);
       }
     }
-    // Also clean up legacy whitelist entries to prevent isDmAllowed re-authorization
+    // Also clean up ALL matching legacy whitelist entries to prevent isDmAllowed re-authorization
     if (config.whitelist?.chat_ids) {
-      const idx = config.whitelist.chat_ids.findIndex(id => String(id) === value);
-      if (idx >= 0) { config.whitelist.chat_ids.splice(idx, 1); modified = true; console.log(`Also removed from legacy whitelist.chat_ids`); }
+      const before = config.whitelist.chat_ids.length;
+      config.whitelist.chat_ids = config.whitelist.chat_ids.filter(id => String(id) !== value);
+      if (config.whitelist.chat_ids.length < before) { modified = true; console.log(`Also removed from legacy whitelist.chat_ids`); }
     }
-    if (value.startsWith('@') && config.whitelist?.usernames) {
-      const username = value.slice(1).toLowerCase();
-      const idx = config.whitelist.usernames.findIndex(u => u.toLowerCase() === username);
-      if (idx >= 0) { config.whitelist.usernames.splice(idx, 1); modified = true; console.log(`Also removed from legacy whitelist.usernames`); }
-    } else if (!value.startsWith('@') && config.whitelist?.usernames) {
-      // Also try matching without @ prefix for direct username removal
-      const idx = config.whitelist.usernames.findIndex(u => u.toLowerCase() === value.toLowerCase());
-      if (idx >= 0) { config.whitelist.usernames.splice(idx, 1); modified = true; console.log(`Also removed from legacy whitelist.usernames`); }
+    if (config.whitelist?.usernames) {
+      const target = value.startsWith('@') ? value.slice(1).toLowerCase() : value.toLowerCase();
+      const before = config.whitelist.usernames.length;
+      config.whitelist.usernames = config.whitelist.usernames.filter(u => u.toLowerCase() !== target);
+      if (config.whitelist.usernames.length < before) { modified = true; console.log(`Also removed from legacy whitelist.usernames`); }
     }
     if (modified) {
       if (!saveConfig(config)) {
