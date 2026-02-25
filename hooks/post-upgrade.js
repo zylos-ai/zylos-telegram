@@ -65,22 +65,36 @@ if (fs.existsSync(configPath)) {
       migrations.push('Added smart_groups array');
     }
 
-    // Migration 4: Ensure whitelist structure
-    if (!config.whitelist) {
-      config.whitelist = { chat_ids: [], usernames: [] };
+    // Migration 4: Migrate legacy whitelist → dmPolicy/dmAllowFrom
+    if (config.whitelist && !config.dmPolicy) {
+      const wl = config.whitelist;
+      const hasEntries = (wl.chat_ids?.length > 0) || (wl.usernames?.length > 0);
+      if (wl.enabled === false) {
+        config.dmPolicy = 'open';
+      } else if (hasEntries || wl.enabled === true) {
+        config.dmPolicy = 'allowlist';
+        if (hasEntries && !config.dmAllowFrom?.length) {
+          const legacyIds = (wl.chat_ids || []).map(String);
+          const legacyUsers = (wl.usernames || []).map(u => `@${u.toLowerCase()}`);
+          config.dmAllowFrom = [...legacyIds, ...legacyUsers];
+        }
+      } else {
+        config.dmPolicy = 'owner';
+      }
+      migrations.push(`Migrated whitelist → dmPolicy=${config.dmPolicy}, ${(config.dmAllowFrom || []).length} users in dmAllowFrom`);
+      config._legacy_whitelist = config.whitelist;
+      delete config.whitelist;
       migrated = true;
-      migrations.push('Added whitelist structure');
-    } else {
-      if (!config.whitelist.chat_ids) {
-        config.whitelist.chat_ids = [];
-        migrated = true;
-        migrations.push('Added whitelist.chat_ids');
-      }
-      if (!config.whitelist.usernames) {
-        config.whitelist.usernames = [];
-        migrated = true;
-        migrations.push('Added whitelist.usernames');
-      }
+    }
+    if (config.dmPolicy === undefined) {
+      config.dmPolicy = 'owner';
+      migrated = true;
+      migrations.push('Added dmPolicy=owner');
+    }
+    if (config.dmAllowFrom === undefined) {
+      config.dmAllowFrom = [];
+      migrated = true;
+      migrations.push('Added dmAllowFrom');
     }
 
     // Migration 5: Ensure owner structure
