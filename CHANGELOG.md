@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-02-26
+
+### Added
+- DM policy model: `dmPolicy` (open/allowlist/owner) with `dmAllowFrom` list, replacing legacy whitelist
+- On-demand media download script (`scripts/download.js`) for file_id-based retrieval
+- Reaction lifecycle hardening: single retry on clearReaction failure, per-indicator 120s timeout, shutdown cleanup
+
+### Fixed
+- Smart group eyes reaction (👀) no longer set on non-mention messages
+- `set-dm-policy` admin command now normalizes input case
+
+### Changed
+- Legacy whitelist config auto-migrated to dmPolicy on upgrade (post-upgrade hook migration 4)
+- Legacy admin commands (`list-whitelist`, `add-whitelist`, etc.) aliased to new dmPolicy commands
+
 ## [0.2.0] - 2026-02-20
 
 ### Added

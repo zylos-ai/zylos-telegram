@@ -158,59 +158,140 @@ const commands = {
     console.log('Run: pm2 restart zylos-telegram');
   },
 
-  'list-whitelist': () => {
+  'set-dm-policy': (policy) => {
+    const valid = ['open', 'allowlist', 'owner'];
+    policy = String(policy || '').trim().toLowerCase();
+    if (!valid.includes(policy)) {
+      console.error(`Usage: admin.js set-dm-policy <${valid.join('|')}>`);
+      process.exit(1);
+    }
     const config = loadConfig();
-    const wl = config.whitelist || { chat_ids: [], usernames: [] };
-    console.log('Whitelist:');
-    console.log('  Chat IDs:', wl.chat_ids.length ? wl.chat_ids.join(', ') : 'none');
-    console.log('  Usernames:', wl.usernames.length ? wl.usernames.join(', ') : 'none');
+    config.dmPolicy = policy;
+    if (!saveConfig(config)) {
+      console.error('[telegram] Failed to save config to disk');
+      process.exit(1);
+    }
+    const desc = { open: 'Anyone can DM', allowlist: 'Only dmAllowFrom users can DM', owner: 'Only owner can DM' };
+    console.log(`DM policy set to: ${policy} (${desc[policy]})`);
+    console.log('Run: pm2 restart zylos-telegram');
   },
 
+  'list-dm-allow': () => {
+    const config = loadConfig();
+    console.log(`DM policy: ${config.dmPolicy || 'owner'}`);
+    console.log(`Group policy: ${config.groupPolicy || 'allowlist'}`);
+    const allowFrom = config.dmAllowFrom || [];
+    console.log(`DM allowFrom (${allowFrom.length}):`, allowFrom.length ? allowFrom.join(', ') : 'none');
+    // Show legacy whitelist entries that still grant access via isDmAllowed backward-compat
+    const legacyIds = config.whitelist?.chat_ids || [];
+    const legacyUsers = config.whitelist?.usernames || [];
+    if (legacyIds.length || legacyUsers.length) {
+      console.log(`Legacy whitelist (also checked at runtime):`);
+      if (legacyIds.length) console.log(`  chat_ids: ${legacyIds.join(', ')}`);
+      if (legacyUsers.length) console.log(`  usernames: ${legacyUsers.join(', ')}`);
+    }
+  },
+
+  'add-dm-allow': (value) => {
+    if (!value) {
+      console.error('Usage: admin.js add-dm-allow <chat_id_or_@username>');
+      process.exit(1);
+    }
+    const config = loadConfig();
+    if (!Array.isArray(config.dmAllowFrom)) {
+      config.dmAllowFrom = [];
+    }
+    if (!config.dmAllowFrom.includes(value)) {
+      config.dmAllowFrom.push(value);
+      if (!saveConfig(config)) {
+        console.error('[telegram] Failed to save config to disk');
+        process.exit(1);
+      }
+      console.log(`Added ${value} to dmAllowFrom`);
+    } else {
+      console.log(`${value} already in dmAllowFrom`);
+    }
+    if ((config.dmPolicy || 'owner') !== 'allowlist') {
+      console.log(`Note: dmPolicy is "${config.dmPolicy || 'owner'}", set to "allowlist" for this to take effect.`);
+    }
+    console.log('Run: pm2 restart zylos-telegram');
+  },
+
+  'remove-dm-allow': (value) => {
+    if (!value) {
+      console.error('Usage: admin.js remove-dm-allow <chat_id_or_@username>');
+      process.exit(1);
+    }
+    const config = loadConfig();
+    let modified = false;
+    if (Array.isArray(config.dmAllowFrom)) {
+      // Remove ALL matching entries (case-insensitive, with/without @ prefix)
+      const valueLower = value.toLowerCase();
+      const matches = a => {
+        const aLower = String(a).toLowerCase();
+        return aLower === valueLower || aLower === `@${valueLower}` || `@${aLower}` === valueLower;
+      };
+      const removed = config.dmAllowFrom.filter(matches);
+      if (removed.length) {
+        config.dmAllowFrom = config.dmAllowFrom.filter(a => !matches(a));
+        modified = true;
+        console.log(`Removed from dmAllowFrom: ${removed.join(', ')}`);
+      }
+    }
+    // Also clean up ALL matching legacy whitelist entries to prevent isDmAllowed re-authorization
+    if (config.whitelist?.chat_ids) {
+      const before = config.whitelist.chat_ids.length;
+      config.whitelist.chat_ids = config.whitelist.chat_ids.filter(id => String(id) !== value);
+      if (config.whitelist.chat_ids.length < before) { modified = true; console.log(`Also removed from legacy whitelist.chat_ids`); }
+    }
+    if (config.whitelist?.usernames) {
+      const target = value.startsWith('@') ? value.slice(1).toLowerCase() : value.toLowerCase();
+      const before = config.whitelist.usernames.length;
+      config.whitelist.usernames = config.whitelist.usernames.filter(u => u.toLowerCase() !== target);
+      if (config.whitelist.usernames.length < before) { modified = true; console.log(`Also removed from legacy whitelist.usernames`); }
+    }
+    if (modified) {
+      if (!saveConfig(config)) {
+        console.error('[telegram] Failed to save config to disk');
+        process.exit(1);
+      }
+    } else {
+      console.log(`${value} not found in dmAllowFrom or legacy whitelist`);
+    }
+  },
+
+  // Legacy whitelist commands → mapped to dmPolicy
+  'list-whitelist': () => commands['list-dm-allow'](),
   'add-whitelist': (type, value) => {
     if (!type || !value || !['chat_id', 'username'].includes(type)) {
-      console.error('Usage: admin.js add-whitelist <chat_id|username> <value>');
+      console.error('Usage: admin.js add-whitelist <chat_id|username> <value> (legacy, use add-dm-allow instead)');
       process.exit(1);
     }
-    const config = loadConfig();
-    if (!config.whitelist) {
-      config.whitelist = { chat_ids: [], usernames: [] };
-    }
-
-    const key = type === 'chat_id' ? 'chat_ids' : 'usernames';
-    if (!config.whitelist[key].includes(value)) {
-      config.whitelist[key].push(value);
-      if (!saveConfig(config)) {
-        console.error('[telegram] Failed to save config to disk');
-        process.exit(1);
-      }
-      console.log(`Added ${type}: ${value} to whitelist`);
-    } else {
-      console.log(`${value} already in whitelist`);
-    }
+    const prefix = type === 'username' ? '@' : '';
+    commands['add-dm-allow'](`${prefix}${value}`);
   },
-
   'remove-whitelist': (type, value) => {
     if (!type || !value || !['chat_id', 'username'].includes(type)) {
-      console.error('Usage: admin.js remove-whitelist <chat_id|username> <value>');
+      console.error('Usage: admin.js remove-whitelist <chat_id|username> <value> (legacy, use remove-dm-allow instead)');
       process.exit(1);
     }
+    const prefix = type === 'username' ? '@' : '';
+    commands['remove-dm-allow'](`${prefix}${value}`);
+    // Also clean up legacy whitelist entries so isDmAllowed backward-compat doesn't re-authorize
     const config = loadConfig();
-    if (!config.whitelist) {
-      console.log('No whitelist configured');
-      return;
+    let modified = false;
+    if (type === 'chat_id' && config.whitelist?.chat_ids) {
+      const idx = config.whitelist.chat_ids.findIndex(id => String(id) === String(value));
+      if (idx >= 0) { config.whitelist.chat_ids.splice(idx, 1); modified = true; }
     }
-
-    const key = type === 'chat_id' ? 'chat_ids' : 'usernames';
-    const index = config.whitelist[key].indexOf(value);
-    if (index !== -1) {
-      config.whitelist[key].splice(index, 1);
-      if (!saveConfig(config)) {
-        console.error('[telegram] Failed to save config to disk');
-        process.exit(1);
-      }
-      console.log(`Removed ${type}: ${value} from whitelist`);
-    } else {
-      console.log(`${value} not in whitelist`);
+    if (type === 'username' && config.whitelist?.usernames) {
+      const lv = value.toLowerCase();
+      const idx = config.whitelist.usernames.findIndex(u => u.toLowerCase() === lv);
+      if (idx >= 0) { config.whitelist.usernames.splice(idx, 1); modified = true; }
+    }
+    if (modified) {
+      saveConfig(config);
+      console.log(`Also removed from legacy whitelist`);
     }
   },
 
@@ -241,13 +322,24 @@ Commands:
   set-group-allowfrom <chat_id> <user_ids...>    Set allowed sender IDs (use * for all)
   set-group-history-limit <chat_id> <limit>      Set per-group history limit
 
-  Whitelist (private chat access):
-  list-whitelist                                 List whitelist entries
-  add-whitelist <chat_id|username> <value>       Add to whitelist
-  remove-whitelist <chat_id|username> <value>    Remove from whitelist
+  DM Access Control:
+  set-dm-policy <open|allowlist|owner>           Set DM policy
+  list-dm-allow                                  Show DM policy and allowFrom list
+  add-dm-allow <chat_id_or_@username>            Add user to dmAllowFrom
+  remove-dm-allow <chat_id_or_@username>         Remove user from dmAllowFrom
+
+  Legacy (whitelist → dmPolicy aliases):
+  list-whitelist                                 → list-dm-allow
+  add-whitelist <chat_id|username> <value>       → add-dm-allow
+  remove-whitelist <chat_id|username> <value>    → remove-dm-allow
 
   show-owner                                     Show current owner
   help                                           Show this help
+
+Permission flow:
+  Private DM:  dmPolicy (open|allowlist|owner) + dmAllowFrom
+  Group chat:  groupPolicy → groups config → per-group allowFrom
+  Owner always bypasses all checks.
 
 After changes, restart bot: pm2 restart zylos-telegram
 `);

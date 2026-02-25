@@ -15,7 +15,7 @@ import { fileURLToPath } from 'url';
 import { loadConfig, getEnv, DATA_DIR } from './lib/config.js';
 import { getHistoryKey } from './lib/utils.js';
 import {
-  hasOwner, bindOwner, isAuthorized, isOwner,
+  hasOwner, bindOwner, isDmAllowed, isOwner,
   isGroupAllowed, isSmartGroup, isSenderAllowed,
   getGroupName, addGroup
 } from './lib/auth.js';
@@ -61,7 +61,9 @@ const C4_RECEIVE = path.join(process.env.HOME, 'zylos/.claude/skills/comm-bridge
 const TYPING_DIR = path.join(DATA_DIR, 'typing');
 fs.mkdirSync(TYPING_DIR, { recursive: true });
 
-/** @type {Map<string, { interval: NodeJS.Timeout, startedAt: number }>} */
+const TYPING_TIMEOUT = 120 * 1000; // 120 seconds max
+
+/** @type {Map<string, { interval: NodeJS.Timeout, timeout: NodeJS.Timeout, startedAt: number, chatId: number, messageId: number }>} */
 const activeTypingIndicators = new Map();
 
 // User cache init
@@ -82,14 +84,23 @@ function parseC4Response(stdout) {
 }
 
 /**
- * Remove eyes reaction from a message (best-effort, fire-and-forget).
+ * Remove eyes reaction from a message (with retry on failure).
  */
 function clearReaction(chatId, messageId) {
   bot.telegram.callApi('setMessageReaction', {
     chat_id: chatId,
     message_id: messageId,
     reaction: []
-  }).catch(() => {});
+  }).catch(() => {
+    // Retry once after 500ms
+    setTimeout(() => {
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: []
+      }).catch(() => {});
+    }, 500);
+  });
 }
 
 /**
@@ -210,11 +221,22 @@ function startTypingIndicator(chatId, correlationId, threadId = null) {
   }, 5000);
 
   const [typChatId, typMsgId] = correlationId.split(':');
+  const numChatId = Number(typChatId);
+  const numMsgId = Number(typMsgId);
+
+  // Per-indicator timeout (exact, like Lark)
+  const timeout = setTimeout(() => {
+    clearReaction(numChatId, numMsgId);
+    stopTypingIndicator(correlationId);
+    console.log(`[telegram] Typing auto-timeout for ${correlationId}`);
+  }, TYPING_TIMEOUT);
+
   activeTypingIndicators.set(correlationId, {
     interval,
+    timeout,
     startedAt: Date.now(),
-    chatId: Number(typChatId),
-    messageId: Number(typMsgId)
+    chatId: numChatId,
+    messageId: numMsgId
   });
 }
 
@@ -227,6 +249,7 @@ function stopTypingIndicator(correlationId) {
   const state = activeTypingIndicators.get(correlationId);
   if (!state) return;
   clearInterval(state.interval);
+  if (state.timeout) clearTimeout(state.timeout);
   activeTypingIndicators.delete(correlationId);
 }
 
@@ -426,8 +449,8 @@ bot.start((ctx) => {
     return;
   }
 
-  if (!isAuthorized(config, ctx)) {
-    ctx.reply('Sorry, this bot is private.').catch(() => {});
+  if (!isDmAllowed(config, ctx)) {
+    ctx.reply("Sorry, I'm not available for private messages. Please ask my owner to grant you access.").catch(() => {});
     console.log(`[telegram] Unauthorized /start: ${ctx.from.username || ctx.chat.id}`);
     return;
   }
@@ -460,8 +483,8 @@ bot.on('text', (ctx) => {
   // === PRIVATE CHAT ===
   if (chatType === 'private') {
     if (!hasOwner(config)) bindOwner(config, ctx);
-    if (!isAuthorized(config, ctx)) {
-      ctx.reply('Sorry, this bot is private.').catch(() => {});
+    if (!isDmAllowed(config, ctx)) {
+      ctx.reply("Sorry, I'm not available for private messages. Please ask my owner to grant you access.").catch(() => {});
       return;
     }
 
@@ -507,19 +530,28 @@ bot.on('text', (ctx) => {
 
     const policy = config.groupPolicy || 'allowlist';
     const shouldRespond =
-      isSmart ||
-      (isAllowed && mentioned) ||
-      (policy !== 'disabled' && senderIsOwner && mentioned);
+      policy !== 'disabled' && (
+        isSmart ||
+        (isAllowed && mentioned) ||
+        (senderIsOwner && mentioned)
+      );
 
     if (!shouldRespond) {
-      if (!isAllowed && mentioned) {
-        console.log(`[telegram] Group not allowed: ${chatId}`);
+      if (mentioned) {
+        if (policy === 'disabled') {
+          console.log(`[telegram] Group policy disabled, rejecting @mention from ${chatId}`);
+          ctx.reply("Sorry, group chat is currently disabled.").catch(() => {});
+        } else if (!isAllowed) {
+          console.log(`[telegram] Group not allowed: ${chatId}, rejecting`);
+          ctx.reply("Sorry, I'm not available in this group.").catch(() => {});
+        }
       }
       return;
     }
 
     if (!senderIsOwner && !isSenderAllowed(config, chatId, ctx.from.id)) {
-      console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId}`);
+      console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId}, rejecting`);
+      ctx.reply("Sorry, you don't have permission to interact with me in this group.").catch(() => {});
       return;
     }
 
@@ -539,13 +571,13 @@ bot.on('text', (ctx) => {
     const correlationId = `${chatId}:${messageId}`;
     const smartNoMention = isSmart && !mentioned;
 
-    // Eyes reaction for all group messages; typing only when @mentioned
-    bot.telegram.callApi('setMessageReaction', {
-      chat_id: chatId,
-      message_id: messageId,
-      reaction: [{ type: 'emoji', emoji: '👀' }]
-    }).catch(() => {});
+    // Eyes reaction + typing only when bot will respond (not smart-no-mention)
     if (!smartNoMention) {
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: [{ type: 'emoji', emoji: '👀' }]
+      }).catch(() => {});
       startTypingIndicator(chatId, correlationId, threadId);
     }
 
@@ -584,8 +616,8 @@ bot.on('photo', async (ctx) => {
   // For private chat: must be authorized, download immediately
   if (chatType === 'private') {
     if (!hasOwner(config)) bindOwner(config, ctx);
-    if (!isAuthorized(config, ctx)) {
-      ctx.reply('Sorry, this bot is private.').catch(() => {});
+    if (!isDmAllowed(config, ctx)) {
+      ctx.reply("Sorry, I'm not available for private messages. Please ask my owner to grant you access.").catch(() => {});
       return;
     }
     if (!config.features.download_media) {
@@ -705,18 +737,12 @@ bot.on('photo', async (ctx) => {
     return;
   }
 
-  // Not @mentioned in smart group: forward without downloading, eyes reaction
+  // Not @mentioned in smart group: forward without downloading, no reaction
   if (isSmart) {
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
 
     const endpoint = buildEndpoint(chatId, { messageId, threadId });
     const correlationId = `${chatId}:${messageId}`;
-
-    bot.telegram.callApi('setMessageReaction', {
-      chat_id: chatId,
-      message_id: messageId,
-      reaction: [{ type: 'emoji', emoji: '👀' }]
-    }).catch(() => {});
 
     const msg = formatMessage({
       chatType,
@@ -756,8 +782,8 @@ bot.on('document', async (ctx) => {
   // For private chat: must be authorized, download immediately
   if (chatType === 'private') {
     if (!hasOwner(config)) bindOwner(config, ctx);
-    if (!isAuthorized(config, ctx)) {
-      ctx.reply('Sorry, this bot is private.').catch(() => {});
+    if (!isDmAllowed(config, ctx)) {
+      ctx.reply("Sorry, I'm not available for private messages. Please ask my owner to grant you access.").catch(() => {});
       return;
     }
     if (!config.features.download_media) {
@@ -877,18 +903,12 @@ bot.on('document', async (ctx) => {
     return;
   }
 
-  // Not @mentioned in smart group: forward without downloading, eyes reaction
+  // Not @mentioned in smart group: forward without downloading, no reaction
   if (isSmart) {
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
 
     const endpoint = buildEndpoint(chatId, { messageId, threadId });
     const correlationId = `${chatId}:${messageId}`;
-
-    bot.telegram.callApi('setMessageReaction', {
-      chat_id: chatId,
-      message_id: messageId,
-      reaction: [{ type: 'emoji', emoji: '👀' }]
-    }).catch(() => {});
 
     const msg = formatMessage({
       chatType,
@@ -1019,7 +1039,21 @@ function cleanup() {
   clearInterval(typingPollInterval);
   clearInterval(cachePersistInterval);
   if (typingWatcher) typingWatcher.close();
-  for (const [id] of activeTypingIndicators) stopTypingIndicator(id);
+
+  // Actively clear reactions + stop typing indicators (like Lark)
+  for (const [id, state] of activeTypingIndicators) {
+    if (state.chatId && state.messageId) {
+      bot.telegram.callApi('setMessageReaction', {
+        chat_id: state.chatId,
+        message_id: state.messageId,
+        reaction: []
+      }).catch(() => {});
+    }
+    clearInterval(state.interval);
+    if (state.timeout) clearTimeout(state.timeout);
+  }
+  activeTypingIndicators.clear();
+
   internalServer.close();
 }
 process.once('SIGINT', () => {

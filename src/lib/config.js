@@ -18,8 +18,8 @@ export const DATA_DIR = path.join(HOME, 'zylos/components/telegram');
 export const DEFAULT_CONFIG = {
   enabled: true,
   owner: { chat_id: null, username: null, bound_at: null },
-  whitelist: { chat_ids: [], usernames: [] },
-  // New v0.2.0 group policy (replaces allowed_groups/smart_groups after migration)
+  dmPolicy: 'owner',          // 'open' | 'allowlist' | 'owner'
+  dmAllowFrom: [],            // chat_ids or @usernames allowed to DM (when dmPolicy=allowlist)
   groupPolicy: 'allowlist',   // 'disabled' | 'allowlist' | 'open'
   groups: {},                 // { [chatId]: { name, mode, allowFrom, historyLimit, added_at } }
   features: {
@@ -34,7 +34,31 @@ export const DEFAULT_CONFIG = {
 export function loadConfig() {
   try {
     const data = fs.readFileSync(CONFIG_PATH, 'utf8');
-    return deepMergeDefaults(DEFAULT_CONFIG, JSON.parse(data));
+    const parsed = JSON.parse(data);
+    const config = deepMergeDefaults(DEFAULT_CONFIG, parsed);
+    // Runtime backward-compat: derive dmPolicy from legacy whitelist
+    // Only triggers for configs with whitelist in file but no dmPolicy yet
+    if ('whitelist' in parsed && !('dmPolicy' in parsed)) {
+      const wl = parsed.whitelist || {};
+      const hasEntries = (wl.chat_ids?.length > 0) || (wl.usernames?.length > 0);
+      if (wl.enabled === false) {
+        // Explicitly disabled whitelist → open access (no restrictions)
+        config.dmPolicy = 'open';
+      } else if (hasEntries || wl.enabled === true) {
+        // Has entries or explicitly enabled → allowlist
+        config.dmPolicy = 'allowlist';
+        // Populate dmAllowFrom from legacy entries so remove-dm-allow works
+        if (hasEntries && !('dmAllowFrom' in parsed)) {
+          const legacyIds = (wl.chat_ids || []).map(String);
+          const legacyUsers = (wl.usernames || []).map(u => `@${u.toLowerCase()}`);
+          config.dmAllowFrom = [...legacyIds, ...legacyUsers];
+        }
+      } else {
+        // No entries, no explicit enabled flag → restrictive default
+        config.dmPolicy = 'owner';
+      }
+    }
+    return config;
   } catch (err) {
     console.error('[telegram] Failed to load config, using defaults:', err.message);
     return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
