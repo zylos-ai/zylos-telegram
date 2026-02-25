@@ -42,8 +42,16 @@ export function loadConfig() {
     if ('whitelist' in parsed && !('dmPolicy' in parsed)) {
       const wl = parsed.whitelist || {};
       const hasEntries = (wl.chat_ids?.length > 0) || (wl.usernames?.length > 0);
-      const wlEnabled = wl.enabled ?? hasEntries;
-      config.dmPolicy = wlEnabled ? 'allowlist' : 'open';
+      if (wl.enabled === false) {
+        // Explicitly disabled whitelist → open access (no restrictions)
+        config.dmPolicy = 'open';
+      } else if (hasEntries || wl.enabled === true) {
+        // Has entries or explicitly enabled → allowlist
+        config.dmPolicy = 'allowlist';
+      } else {
+        // No entries, no explicit enabled flag → restrictive default
+        config.dmPolicy = 'owner';
+      }
     }
     return config;
   } catch (err) {
