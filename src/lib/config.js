@@ -35,7 +35,19 @@ export const DEFAULT_CONFIG = {
 export function loadConfig() {
   try {
     const data = fs.readFileSync(CONFIG_PATH, 'utf8');
-    return deepMergeDefaults(DEFAULT_CONFIG, JSON.parse(data));
+    const parsed = JSON.parse(data);
+    const config = deepMergeDefaults(DEFAULT_CONFIG, parsed);
+    // Runtime backward-compat: derive dmPolicy from legacy whitelist
+    // Only triggers for configs with whitelist in file but no dmPolicy yet
+    if ('whitelist' in parsed && !('dmPolicy' in parsed)) {
+      const wlEnabled = parsed.whitelist?.enabled ?? false;
+      if (wlEnabled) {
+        config.dmPolicy = 'allowlist';
+      } else {
+        config.dmPolicy = 'open';
+      }
+    }
+    return config;
   } catch (err) {
     console.error('[telegram] Failed to load config, using defaults:', err.message);
     return JSON.parse(JSON.stringify(DEFAULT_CONFIG));

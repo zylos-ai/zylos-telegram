@@ -248,6 +248,22 @@ const commands = {
     }
     const prefix = type === 'username' ? '@' : '';
     commands['remove-dm-allow'](`${prefix}${value}`);
+    // Also clean up legacy whitelist entries so isDmAllowed backward-compat doesn't re-authorize
+    const config = loadConfig();
+    let modified = false;
+    if (type === 'chat_id' && config.whitelist?.chat_ids) {
+      const idx = config.whitelist.chat_ids.findIndex(id => String(id) === String(value));
+      if (idx >= 0) { config.whitelist.chat_ids.splice(idx, 1); modified = true; }
+    }
+    if (type === 'username' && config.whitelist?.usernames) {
+      const lv = value.toLowerCase();
+      const idx = config.whitelist.usernames.findIndex(u => u.toLowerCase() === lv);
+      if (idx >= 0) { config.whitelist.usernames.splice(idx, 1); modified = true; }
+    }
+    if (modified) {
+      saveConfig(config);
+      console.log(`Also removed from legacy whitelist`);
+    }
   },
 
   'show-owner': () => {
