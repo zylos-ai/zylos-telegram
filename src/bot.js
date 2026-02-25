@@ -450,7 +450,7 @@ bot.start((ctx) => {
   }
 
   if (!isDmAllowed(config, ctx)) {
-    ctx.reply('Sorry, this bot is private.').catch(() => {});
+    ctx.reply("Sorry, I'm not available for private messages. Please ask my owner to grant you access.").catch(() => {});
     console.log(`[telegram] Unauthorized /start: ${ctx.from.username || ctx.chat.id}`);
     return;
   }
@@ -484,7 +484,7 @@ bot.on('text', (ctx) => {
   if (chatType === 'private') {
     if (!hasOwner(config)) bindOwner(config, ctx);
     if (!isDmAllowed(config, ctx)) {
-      ctx.reply('Sorry, this bot is private.').catch(() => {});
+      ctx.reply("Sorry, I'm not available for private messages. Please ask my owner to grant you access.").catch(() => {});
       return;
     }
 
@@ -608,7 +608,7 @@ bot.on('photo', async (ctx) => {
   if (chatType === 'private') {
     if (!hasOwner(config)) bindOwner(config, ctx);
     if (!isDmAllowed(config, ctx)) {
-      ctx.reply('Sorry, this bot is private.').catch(() => {});
+      ctx.reply("Sorry, I'm not available for private messages. Please ask my owner to grant you access.").catch(() => {});
       return;
     }
     if (!config.features.download_media) {
@@ -774,7 +774,7 @@ bot.on('document', async (ctx) => {
   if (chatType === 'private') {
     if (!hasOwner(config)) bindOwner(config, ctx);
     if (!isDmAllowed(config, ctx)) {
-      ctx.reply('Sorry, this bot is private.').catch(() => {});
+      ctx.reply("Sorry, I'm not available for private messages. Please ask my owner to grant you access.").catch(() => {});
       return;
     }
     if (!config.features.download_media) {
