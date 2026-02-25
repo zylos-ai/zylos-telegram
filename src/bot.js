@@ -530,9 +530,11 @@ bot.on('text', (ctx) => {
 
     const policy = config.groupPolicy || 'allowlist';
     const shouldRespond =
-      isSmart ||
-      (isAllowed && mentioned) ||
-      (policy !== 'disabled' && senderIsOwner && mentioned);
+      policy !== 'disabled' && (
+        isSmart ||
+        (isAllowed && mentioned) ||
+        (senderIsOwner && mentioned)
+      );
 
     if (!shouldRespond) {
       if (mentioned) {
