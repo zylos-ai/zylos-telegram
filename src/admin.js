@@ -224,16 +224,17 @@ const commands = {
     const config = loadConfig();
     let modified = false;
     if (Array.isArray(config.dmAllowFrom)) {
-      // Normalize: match case-insensitively and with/without @ prefix
+      // Remove ALL matching entries (case-insensitive, with/without @ prefix)
       const valueLower = value.toLowerCase();
-      const idx = config.dmAllowFrom.findIndex(a => {
+      const matches = a => {
         const aLower = a.toLowerCase();
         return aLower === valueLower || aLower === `@${valueLower}` || `@${aLower}` === valueLower;
-      });
-      if (idx !== -1) {
-        const removed = config.dmAllowFrom.splice(idx, 1)[0];
+      };
+      const removed = config.dmAllowFrom.filter(matches);
+      if (removed.length) {
+        config.dmAllowFrom = config.dmAllowFrom.filter(a => !matches(a));
         modified = true;
-        console.log(`Removed ${removed} from dmAllowFrom`);
+        console.log(`Removed from dmAllowFrom: ${removed.join(', ')}`);
       }
     }
     // Also clean up legacy whitelist entries to prevent isDmAllowed re-authorization
