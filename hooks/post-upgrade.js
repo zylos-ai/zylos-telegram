@@ -82,7 +82,6 @@ if (fs.existsSync(configPath)) {
         config.dmPolicy = 'owner';
       }
       migrations.push(`Migrated whitelist → dmPolicy=${config.dmPolicy}, ${(config.dmAllowFrom || []).length} users in dmAllowFrom`);
-      config._legacy_whitelist = config.whitelist;
       delete config.whitelist;
       migrated = true;
     }
