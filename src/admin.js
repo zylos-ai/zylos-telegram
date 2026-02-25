@@ -181,6 +181,14 @@ const commands = {
     console.log(`Group policy: ${config.groupPolicy || 'allowlist'}`);
     const allowFrom = config.dmAllowFrom || [];
     console.log(`DM allowFrom (${allowFrom.length}):`, allowFrom.length ? allowFrom.join(', ') : 'none');
+    // Show legacy whitelist entries that still grant access via isDmAllowed backward-compat
+    const legacyIds = config.whitelist?.chat_ids || [];
+    const legacyUsers = config.whitelist?.usernames || [];
+    if (legacyIds.length || legacyUsers.length) {
+      console.log(`Legacy whitelist (also checked at runtime):`);
+      if (legacyIds.length) console.log(`  chat_ids: ${legacyIds.join(', ')}`);
+      if (legacyUsers.length) console.log(`  usernames: ${legacyUsers.join(', ')}`);
+    }
   },
 
   'add-dm-allow': (value) => {
@@ -216,11 +224,16 @@ const commands = {
     const config = loadConfig();
     let modified = false;
     if (Array.isArray(config.dmAllowFrom)) {
-      const idx = config.dmAllowFrom.indexOf(value);
+      // Normalize: match case-insensitively and with/without @ prefix
+      const valueLower = value.toLowerCase();
+      const idx = config.dmAllowFrom.findIndex(a => {
+        const aLower = a.toLowerCase();
+        return aLower === valueLower || aLower === `@${valueLower}` || `@${aLower}` === valueLower;
+      });
       if (idx !== -1) {
-        config.dmAllowFrom.splice(idx, 1);
+        const removed = config.dmAllowFrom.splice(idx, 1)[0];
         modified = true;
-        console.log(`Removed ${value} from dmAllowFrom`);
+        console.log(`Removed ${removed} from dmAllowFrom`);
       }
     }
     // Also clean up legacy whitelist entries to prevent isDmAllowed re-authorization
