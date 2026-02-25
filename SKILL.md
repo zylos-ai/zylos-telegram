@@ -1,7 +1,15 @@
 ---
 name: telegram
 version: 0.2.0
-description: Telegram Bot for user communication
+description: >-
+  Telegram Bot communication channel (long polling mode, works behind firewalls).
+  Use when: (1) replying to Telegram messages (DM or group @mentions),
+  (2) sending proactive messages or media (images, files) to Telegram users or groups,
+  (3) managing DM access control (dmPolicy: open/allowlist/owner, dmAllowFrom list),
+  (4) managing group access control (groupPolicy, per-group allowFrom, smart/mention modes),
+  (5) configuring the bot (admin CLI, proxy settings),
+  (6) troubleshooting Telegram bot connection or polling issues.
+  Config at ~/zylos/components/telegram/config.json. Service: pm2 zylos-telegram.
 type: communication
 
 lifecycle:
@@ -38,17 +46,9 @@ dependencies:
 
 Telegram messaging component for Zylos Agent.
 
-## Dependencies
+Depends on: comm-bridge (C4 message routing).
 
-- **comm-bridge**: Required for forwarding messages to Claude via C4 protocol
-
-## When to Use
-
-- Replying to Telegram messages from users
-- Sending notifications or alerts via Telegram
-- Receiving images/files from Telegram users
-
-## How to Send Messages
+## Sending Messages
 
 Via C4 Bridge:
 ```bash
@@ -99,40 +99,47 @@ pm2 restart zylos-telegram   # Restart service
 ## Owner
 
 First user to interact with the bot becomes the owner (admin).
+Owner always bypasses all access checks (DM and group) regardless of policy settings.
+
+## Access Control
+
+DM and group access are controlled by independent policies:
+
+**Private DM (dmPolicy):** `open` (anyone) | `allowlist` (dmAllowFrom list) | `owner` (owner only)
+
+**Group (groupPolicy):** `open` (any group) | `allowlist` (configured groups only) | `disabled` (no groups)
+
+Per-group options: `mode` (mention/smart), `allowFrom` (restrict senders), `historyLimit`.
 
 ## Admin CLI
 
 Manage bot configuration via `admin.js`:
 
 ```bash
-# Show full config
-node ~/zylos/.claude/skills/telegram/src/admin.js show
+ADM="node ~/zylos/.claude/skills/telegram/src/admin.js"
 
-# Allowed Groups (respond to @mentions)
-node ~/zylos/.claude/skills/telegram/src/admin.js list-allowed-groups
-node ~/zylos/.claude/skills/telegram/src/admin.js add-allowed-group <chat_id> <name>
-node ~/zylos/.claude/skills/telegram/src/admin.js remove-allowed-group <chat_id>
+# General
+$ADM show                                    # Show full config
+$ADM show-owner                              # Show current owner
+$ADM help                                    # Show all commands
 
-# Smart Groups (receive all messages, no @mention needed)
-node ~/zylos/.claude/skills/telegram/src/admin.js list-smart-groups
-node ~/zylos/.claude/skills/telegram/src/admin.js add-smart-group <chat_id> <name>
-node ~/zylos/.claude/skills/telegram/src/admin.js remove-smart-group <chat_id>
+# DM Access Control
+$ADM set-dm-policy <open|allowlist|owner>     # Set DM policy
+$ADM list-dm-allow                            # Show DM policy + allowFrom list
+$ADM add-dm-allow <chat_id_or_username>       # Add user to dmAllowFrom
+$ADM remove-dm-allow <chat_id_or_username>    # Remove user from dmAllowFrom
 
-# Group Whitelist (enabled by default)
-node ~/zylos/.claude/skills/telegram/src/admin.js enable-group-whitelist
-node ~/zylos/.claude/skills/telegram/src/admin.js disable-group-whitelist
+# Group Management
+$ADM list-groups                              # List all configured groups
+$ADM add-group <chat_id> <name> [mode]        # Add group (mode: mention|smart)
+$ADM remove-group <chat_id>                   # Remove a group
+$ADM set-group-policy <disabled|allowlist|open>  # Set group policy
+$ADM set-group-mode <chat_id> <mention|smart> # Set group mode
+$ADM set-group-allowfrom <chat_id> <id1,id2>  # Set per-group allowed senders
+$ADM set-group-history-limit <chat_id> <n>    # Set per-group context message limit
 
-# Whitelist
-node ~/zylos/.claude/skills/telegram/src/admin.js list-whitelist
-node ~/zylos/.claude/skills/telegram/src/admin.js add-whitelist chat_id <id>
-node ~/zylos/.claude/skills/telegram/src/admin.js add-whitelist username <name>
-node ~/zylos/.claude/skills/telegram/src/admin.js remove-whitelist chat_id <id>
-
-# Owner info
-node ~/zylos/.claude/skills/telegram/src/admin.js show-owner
-
-# Help
-node ~/zylos/.claude/skills/telegram/src/admin.js help
+# Legacy aliases (backward-compatible, map to commands above)
+# list-whitelist, add-whitelist, remove-whitelist → list-dm-allow, add-dm-allow, remove-dm-allow
 ```
 
 After changes, restart: `pm2 restart zylos-telegram`
