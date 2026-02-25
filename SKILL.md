@@ -70,6 +70,25 @@ node c4-send.js "telegram" "<chat_id>" "[MEDIA:image]/path/to/photo.jpg"
 node c4-send.js "telegram" "<chat_id>" "[MEDIA:file]/path/to/document.pdf"
 ```
 
+## Downloading Media by file_id
+
+In smart group mode, photos and files sent without @mention are logged with
+metadata only (file_id). Use `download.js` to fetch them on demand:
+
+```bash
+# Download a photo or file by its file_id
+node ~/zylos/.claude/skills/telegram/scripts/download.js <file_id> [filename_hint]
+
+# Examples:
+node ~/zylos/.claude/skills/telegram/scripts/download.js AgACAgIAAxkBAAI... photo
+node ~/zylos/.claude/skills/telegram/scripts/download.js BQACAgIAAxkBAAI... report
+```
+
+The file_id comes from context messages like `[photo, file_id: xxx, msg_id: xxx]`.
+Telegram file_ids are permanent — they can be downloaded at any time.
+
+Output: local file path on success, error message on failure.
+
 ## Config Location
 
 - Config: `~/zylos/components/telegram/config.json`
