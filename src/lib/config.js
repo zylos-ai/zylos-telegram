@@ -40,12 +40,10 @@ export function loadConfig() {
     // Runtime backward-compat: derive dmPolicy from legacy whitelist
     // Only triggers for configs with whitelist in file but no dmPolicy yet
     if ('whitelist' in parsed && !('dmPolicy' in parsed)) {
-      const wlEnabled = parsed.whitelist?.enabled ?? false;
-      if (wlEnabled) {
-        config.dmPolicy = 'allowlist';
-      } else {
-        config.dmPolicy = 'open';
-      }
+      const wl = parsed.whitelist || {};
+      const hasEntries = (wl.chat_ids?.length > 0) || (wl.usernames?.length > 0);
+      const wlEnabled = wl.enabled ?? hasEntries;
+      config.dmPolicy = wlEnabled ? 'allowlist' : 'open';
     }
     return config;
   } catch (err) {
