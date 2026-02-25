@@ -536,13 +536,15 @@ bot.on('text', (ctx) => {
 
     if (!shouldRespond) {
       if (!isAllowed && mentioned) {
-        console.log(`[telegram] Group not allowed: ${chatId}`);
+        console.log(`[telegram] Group not allowed: ${chatId}, rejecting`);
+        ctx.reply("Sorry, I'm not available in this group.").catch(() => {});
       }
       return;
     }
 
     if (!senderIsOwner && !isSenderAllowed(config, chatId, ctx.from.id)) {
-      console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId}`);
+      console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId}, rejecting`);
+      ctx.reply("Sorry, you don't have permission to interact with me in this group.").catch(() => {});
       return;
     }
 
