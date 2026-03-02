@@ -50,9 +50,11 @@ Depends on: comm-bridge (C4 message routing).
 
 ## Sending Messages
 
-Via C4 Bridge:
+Via C4 Bridge (always use stdin form):
 ```bash
-node ~/zylos/.claude/skills/comm-bridge/scripts/c4-send.js "telegram" "<chat_id>" "message"
+cat <<'EOF' | node ~/zylos/.claude/skills/comm-bridge/scripts/c4-send.js "telegram" "<chat_id>"
+message
+EOF
 ```
 
 Or directly (for testing):
@@ -64,10 +66,14 @@ node ~/zylos/.claude/skills/telegram/scripts/send.js <chat_id> "message"
 
 ```bash
 # Send image
-node c4-send.js "telegram" "<chat_id>" "[MEDIA:image]/path/to/photo.jpg"
+cat <<'EOF' | node ~/zylos/.claude/skills/comm-bridge/scripts/c4-send.js "telegram" "<chat_id>"
+[MEDIA:image]/path/to/photo.jpg
+EOF
 
 # Send file
-node c4-send.js "telegram" "<chat_id>" "[MEDIA:file]/path/to/document.pdf"
+cat <<'EOF' | node ~/zylos/.claude/skills/comm-bridge/scripts/c4-send.js "telegram" "<chat_id>"
+[MEDIA:file]/path/to/document.pdf
+EOF
 ```
 
 ## Downloading Media by file_id
