@@ -375,34 +375,9 @@ function notifyOwnerPendingGroup(chatId, chatTitle, addedBy) {
 }
 
 /**
- * Handle bot being added to a group
- */
-bot.on('new_chat_members', (ctx) => {
-  config = loadConfig();
-  const newMembers = ctx.message.new_chat_members;
-  const botId = bot.botInfo?.id;
-  const botWasAdded = newMembers.some(member => member.id === botId);
-  if (!botWasAdded) return;
-
-  const chatId = ctx.chat.id;
-  const chatTitle = ctx.chat.title || 'Unknown Group';
-  const addedById = String(ctx.from.id);
-
-  if (String(config.owner?.chat_id) === addedById) {
-    const added = addGroup(config, chatId, chatTitle, 'mention');
-    if (added) {
-      ctx.reply(`Group added. Members can now @${bot.botInfo?.username} to chat.`).catch(() => {});
-    } else {
-      ctx.reply('Group is already configured.').catch(() => {});
-    }
-  } else {
-    ctx.reply('Bot joined, but requires admin approval to respond.').catch(() => {});
-    notifyOwnerPendingGroup(chatId, chatTitle, ctx.from.username || ctx.from.first_name || addedById);
-  }
-});
-
-/**
- * Handle bot's own chat member status changes (covers new group creation scenario)
+ * Handle bot being added to a group.
+ * Uses my_chat_member exclusively — this is the reliable event for bot status changes.
+ * new_chat_members is NOT used for bot-self-add to avoid duplicate messages (#43).
  */
 bot.on('my_chat_member', (ctx) => {
   const update = ctx.myChatMember;
@@ -422,13 +397,12 @@ bot.on('my_chat_member', (ctx) => {
   const chatTitle = chat.title || 'Unknown Group';
   const addedById = String(update.from.id);
 
-  // Skip if group already registered (new_chat_members already handled it)
-  if (config.groups && config.groups[String(chatId)]) return;
-
   if (String(config.owner?.chat_id) === addedById) {
     const added = addGroup(config, chatId, chatTitle, 'mention');
     if (added) {
       bot.telegram.sendMessage(chatId, `Group added. Members can now @${bot.botInfo?.username} to chat.`).catch(() => {});
+    } else {
+      bot.telegram.sendMessage(chatId, 'Group is already configured.').catch(() => {});
     }
   } else {
     bot.telegram.sendMessage(chatId, 'Bot joined, but requires admin approval to respond.').catch(() => {});
