@@ -88,3 +88,13 @@ export async function downloadDocument(ctx) {
   const prefix = rawPrefix.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 64) || 'document';
   return downloadFile(ctx, doc.file_id, prefix);
 }
+
+/**
+ * Download voice message
+ * @param {Object} ctx - Telegraf context
+ * @returns {Promise<string>} Local file path (.oga)
+ */
+export async function downloadVoice(ctx) {
+  const voice = ctx.message.voice;
+  return downloadFile(ctx, voice.file_id, 'voice');
+}
