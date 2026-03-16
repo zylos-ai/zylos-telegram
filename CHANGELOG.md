@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-03-17
+
+### Added
+- Voice message transcription support via optional voice-asr skill (#46)
+  - Private chat: all voice messages processed (subject to DM access control)
+  - Group: only when @mentioned
+  - 👀 reaction + typing indicator during processing
+  - Transcription via `~/zylos/bin/transcribe`; voice messages forwarded as `[Voice] <text>`
+  - Temp audio files cleaned up; graceful "not supported" reply when voice-asr is not installed
+
+### Fixed
+- `downloadVoice` was imported but missing from `media.js` — would cause startup crash (#46)
+
 ## [0.2.3] - 2026-03-07
 
 ### Fixed
