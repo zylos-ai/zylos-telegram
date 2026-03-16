@@ -57,6 +57,10 @@ const bot = new Telegraf(botToken, botOptions);
 
 const C4_RECEIVE = path.join(process.env.HOME, 'zylos/.claude/skills/comm-bridge/scripts/c4-receive.js');
 const TRANSCRIBE_SCRIPT = path.join(process.env.HOME, 'zylos/bin/transcribe');
+const VOICE_ENABLED = fs.existsSync(TRANSCRIBE_SCRIPT);
+if (!VOICE_ENABLED) {
+  console.log('[telegram] Voice ASR not available (~/zylos/bin/transcribe not found) — voice messages will be rejected gracefully');
+}
 
 function transcribeAudio(audioPath) {
   return new Promise((resolve, reject) => {
@@ -938,6 +942,10 @@ bot.on('voice', async (ctx) => {
       ctx.reply("Sorry, I'm not available for private messages.").catch(() => {});
       return;
     }
+    if (!VOICE_ENABLED) {
+      ctx.reply('Voice messages are not supported on this instance. Please send text.').catch(() => {});
+      return;
+    }
 
     const logEntry = {
       timestamp: new Date().toISOString(),
@@ -1020,6 +1028,11 @@ bot.on('voice', async (ctx) => {
     return;
   }
 
+  if (!VOICE_ENABLED) {
+    bot.telegram.sendMessage(chatId, 'Voice messages are not supported on this instance. Please send text.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    return;
+  }
+
   if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) {
     console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (voice)`);
     return;
@@ -1069,7 +1082,7 @@ bot.on('voice', async (ctx) => {
     quotedContent: getReplyToContext(ctx),
     mediaPath: null,
     isThread: !!threadId,
-    smartHint: isSmart && !isBotMentioned(ctx)
+    smartHint: false
   });
   sendToC4('telegram', endpoint, msg, (errMsg) => {
     stopTypingIndicator(correlationId);
