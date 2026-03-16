@@ -40,6 +40,7 @@ config:
 
 dependencies:
   - comm-bridge
+  - voice-asr
 ---
 
 # Telegram Bot

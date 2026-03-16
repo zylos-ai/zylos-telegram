@@ -19,7 +19,7 @@ import {
   isGroupAllowed, isSmartGroup, isSenderAllowed,
   getGroupName, addGroup
 } from './lib/auth.js';
-import { downloadPhoto, downloadDocument } from './lib/media.js';
+import { downloadPhoto, downloadDocument, downloadVoice } from './lib/media.js';
 import {
   logAndRecord, ensureReplay, getHistory,
   formatMessage
@@ -56,6 +56,19 @@ if (proxyUrl) {
 const bot = new Telegraf(botToken, botOptions);
 
 const C4_RECEIVE = path.join(process.env.HOME, 'zylos/.claude/skills/comm-bridge/scripts/c4-receive.js');
+const TRANSCRIBE_SCRIPT = path.join(process.env.HOME, 'zylos/bin/transcribe');
+
+function transcribeAudio(audioPath) {
+  return new Promise((resolve, reject) => {
+    execFile(TRANSCRIBE_SCRIPT, [audioPath], { timeout: 90000, encoding: 'utf8' }, (err, stdout, stderr) => {
+      if (err) {
+        reject(new Error(stderr?.trim() || err.message));
+      } else {
+        resolve(stdout.trim());
+      }
+    });
+  });
+}
 
 // Typing indicator state
 const TYPING_DIR = path.join(DATA_DIR, 'typing');
@@ -905,6 +918,164 @@ bot.on('document', async (ctx) => {
 
   // Not @mentioned in non-smart group: logged with metadata only
   console.log(`[telegram] Document logged for lazy download in group ${chatId}`);
+});
+
+/**
+ * Handle voice messages — download and transcribe via local Whisper (Option A: transparent ASR)
+ */
+bot.on('voice', async (ctx) => {
+  const config = loadConfig();
+  const chatType = ctx.chat.type;
+  const chatId = ctx.chat.id;
+  const messageId = ctx.message.message_id;
+  const threadId = ctx.message.message_thread_id || null;
+  const userName = resolveUserName(ctx.from);
+
+  // Private chat: must be authorized
+  if (chatType === 'private') {
+    if (!hasOwner(config)) bindOwner(config, ctx);
+    if (!isDmAllowed(config, ctx)) {
+      ctx.reply("Sorry, I'm not available for private messages.").catch(() => {});
+      return;
+    }
+
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      message_id: messageId,
+      user_id: ctx.from.id,
+      user_name: userName,
+      text: '[voice message]',
+      thread_id: threadId
+    };
+    logAndRecord(chatId, logEntry, config);
+
+    bot.telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: [{ type: 'emoji', emoji: '👀' }]
+    }).catch(() => {});
+    startTypingIndicator(chatId, `${chatId}:${messageId}`, threadId);
+
+    let localPath;
+    try {
+      localPath = await downloadVoice(ctx);
+    } catch (err) {
+      console.error(`[telegram] Voice download error: ${err.message}`);
+      stopTypingIndicator(`${chatId}:${messageId}`);
+      clearReaction(chatId, messageId);
+      ctx.reply('Failed to download voice message.').catch(() => {});
+      return;
+    }
+
+    let transcript;
+    try {
+      transcript = await transcribeAudio(localPath);
+    } catch (err) {
+      console.error(`[telegram] Voice transcription error: ${err.message}`);
+      stopTypingIndicator(`${chatId}:${messageId}`);
+      clearReaction(chatId, messageId);
+      fs.unlink(localPath, () => {});
+      ctx.reply('Voice transcription failed, please send text instead.').catch(() => {});
+      return;
+    }
+    fs.unlink(localPath, () => {});
+    stopTypingIndicator(`${chatId}:${messageId}`);
+    clearReaction(chatId, messageId);
+    console.log(`[telegram] Voice transcribed: "${transcript.substring(0, 60)}"`);
+
+    const endpoint = buildEndpoint(chatId, { messageId, threadId });
+    const msg = formatMessage({
+      chatType: 'private',
+      userName,
+      text: `[Voice] ${transcript}`,
+      quotedContent: getReplyToContext(ctx),
+      mediaPath: null,
+      isThread: !!threadId
+    });
+    sendToC4('telegram', endpoint, msg, (errMsg) => {
+      bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    });
+    return;
+  }
+
+  // Group chat
+  const isAllowed = isGroupAllowed(config, chatId);
+  const isSmart = isSmartGroup(config, chatId, threadId);
+  if (!isAllowed && !isSmart) return;
+
+  ensureReplay(getHistoryKey(chatId, threadId), config);
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    message_id: messageId,
+    user_id: ctx.from.id,
+    user_name: userName,
+    text: '[voice message]',
+    thread_id: threadId
+  };
+  logAndRecord(chatId, logEntry, config);
+
+  // Only process voice when @mentioned in group/smart-group
+  if (!isBotMentioned(ctx)) {
+    console.log(`[telegram] Voice in group ${chatId} without @mention, logged only`);
+    return;
+  }
+
+  if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) {
+    console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (voice)`);
+    return;
+  }
+
+  bot.telegram.callApi('setMessageReaction', {
+    chat_id: chatId,
+    message_id: messageId,
+    reaction: [{ type: 'emoji', emoji: '👀' }]
+  }).catch(() => {});
+  startTypingIndicator(chatId, `${chatId}:${messageId}`, threadId);
+
+  let localPath;
+  try {
+    localPath = await downloadVoice(ctx);
+  } catch (err) {
+    console.error(`[telegram] Group voice download error: ${err.message}`);
+    stopTypingIndicator(`${chatId}:${messageId}`);
+    clearReaction(chatId, messageId);
+    return;
+  }
+
+  let transcript;
+  try {
+    transcript = await transcribeAudio(localPath);
+  } catch (err) {
+    console.error(`[telegram] Group voice transcription error: ${err.message}`);
+    stopTypingIndicator(`${chatId}:${messageId}`);
+    clearReaction(chatId, messageId);
+    fs.unlink(localPath, () => {});
+    bot.telegram.sendMessage(chatId, 'Voice transcription failed, please send text instead.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    return;
+  }
+  fs.unlink(localPath, () => {});
+  stopTypingIndicator(`${chatId}:${messageId}`);
+  clearReaction(chatId, messageId);
+  console.log(`[telegram] Group voice transcribed: "${transcript.substring(0, 60)}"`);
+
+  const endpoint = buildEndpoint(chatId, { messageId, threadId });
+  const correlationId = `${chatId}:${messageId}`;
+  const msg = formatMessage({
+    chatType,
+    groupName: getGroupName(config, chatId, ctx.chat.title),
+    userName,
+    text: `[Voice] ${transcript}`,
+    contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
+    quotedContent: getReplyToContext(ctx),
+    mediaPath: null,
+    isThread: !!threadId,
+    smartHint: isSmart && !isBotMentioned(ctx)
+  });
+  sendToC4('telegram', endpoint, msg, (errMsg) => {
+    stopTypingIndicator(correlationId);
+    clearReaction(chatId, messageId);
+    bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+  });
 });
 
 // Internal HTTP server for recording bot's outgoing messages.
