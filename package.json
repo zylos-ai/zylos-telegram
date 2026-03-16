@@ -1,6 +1,6 @@
 {
   "name": "zylos-telegram",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Telegram Bot component for Zylos Agent",
   "type": "module",
   "main": "src/bot.js",
