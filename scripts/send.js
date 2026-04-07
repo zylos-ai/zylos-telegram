@@ -181,7 +181,7 @@ function splitMessage(text, maxLength) {
  */
 function prepareMessage(text) {
   const cfg = loadConfig();
-  const textMode = cfg.message?.textMode || 'markdown';
+  const textMode = cfg.message?.textMode || 'plain';
 
   if (textMode === 'html') {
     // Trust upstream HTML — only split, don't convert
