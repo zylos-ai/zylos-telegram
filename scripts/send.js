@@ -13,6 +13,8 @@ import { execFileSync } from 'child_process';
 import dotenv from 'dotenv';
 import { parseEndpoint } from '../src/lib/utils.js';
 import { DATA_DIR, loadConfig } from '../src/lib/config.js';
+import { markdownToHtml, hasMarkdownContent, stripHtmlTags } from '../src/lib/markdown-html.js';
+import { splitHtmlMessage } from '../src/lib/html-split.js';
 
 // Load .env from ~/zylos/.env (not cwd which may be comm-bridge directory)
 dotenv.config({ path: path.join(process.env.HOME, 'zylos/.env') });
@@ -174,14 +176,47 @@ function splitMessage(text, maxLength) {
 }
 
 /**
+ * Determine text mode and prepare chunks accordingly.
+ * Returns { chunks, parseMode } where parseMode is 'HTML' or null.
+ */
+function prepareMessage(text) {
+  const cfg = loadConfig();
+  const textMode = cfg.message?.textMode || 'plain';
+
+  if (textMode === 'html') {
+    // Trust upstream HTML — only split, don't convert
+    return { chunks: splitHtmlMessage(text, MAX_LENGTH), parseMode: 'HTML' };
+  }
+
+  if (textMode === 'markdown') {
+    // Only convert if markdown content is detected
+    if (hasMarkdownContent(text)) {
+      const html = markdownToHtml(text);
+      return { chunks: splitHtmlMessage(html, MAX_LENGTH), parseMode: 'HTML' };
+    }
+    // No markdown detected — send as plain
+    return { chunks: splitMessage(text, MAX_LENGTH), parseMode: null };
+  }
+
+  // plain mode (default) — no conversion
+  return { chunks: splitMessage(text, MAX_LENGTH), parseMode: null };
+}
+
+/**
  * Send text message, chunked with reply-to and thread support.
+ * Supports HTML parse mode with automatic fallback to plain text on 400 errors.
  */
 async function sendText(text) {
-  const chunks = splitMessage(text, MAX_LENGTH);
+  const { chunks, parseMode } = prepareMessage(text);
 
   for (let i = 0; i < chunks.length; i++) {
     const isFirstChunk = i === 0;
     const params = { chat_id: chatId, text: chunks[i] };
+
+    // Add parse_mode for HTML
+    if (parseMode) {
+      params.parse_mode = parseMode;
+    }
 
     // Thread support: all chunks go to the correct topic
     if (threadId) {
@@ -196,10 +231,30 @@ async function sendText(text) {
     try {
       await apiRequestWithRetry('sendMessage', params);
     } catch (err) {
+      const errCode = err.telegramResponse?.error_code;
+
       // If reply_to fails (message deleted/too old), retry without it
-      if (params.reply_to_message_id && err.telegramResponse?.error_code === 400) {
-        console.warn('[telegram] reply_to_message_id failed, sending without reply');
+      if (params.reply_to_message_id && errCode === 400) {
+        console.warn('[telegram] reply_to_message_id failed, trying without reply');
         delete params.reply_to_message_id;
+        try {
+          await apiRequestWithRetry('sendMessage', params);
+        } catch (retryErr) {
+          // If still 400 and we have parse_mode, fallback to plain text
+          if (params.parse_mode && retryErr.telegramResponse?.error_code === 400) {
+            console.warn('[telegram] HTML parse failed, falling back to plain text');
+            delete params.parse_mode;
+            params.text = stripHtmlTags(chunks[i]);
+            await apiRequestWithRetry('sendMessage', params);
+          } else {
+            throw retryErr;
+          }
+        }
+      } else if (params.parse_mode && errCode === 400) {
+        // HTML parse error — fallback to plain text (single retry)
+        console.warn('[telegram] HTML parse failed, falling back to plain text');
+        delete params.parse_mode;
+        params.text = stripHtmlTags(chunks[i]);
         await apiRequestWithRetry('sendMessage', params);
       } else {
         throw err;
