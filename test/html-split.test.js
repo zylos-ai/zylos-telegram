@@ -79,6 +79,20 @@ describe('splitHtmlMessage', () => {
     expect(splitHtmlMessage(msg, 100)).toEqual([msg]);
   });
 
+  it('does not OOM on long-attribute tags (regression)', () => {
+    // Regression test: old implementation prepended openTags(openStack) back to remaining,
+    // causing memory explosion with long-attribute tags
+    const longAttr = 'x'.repeat(500);
+    const content = 'Y '.repeat(2000);
+    const msg = `<blockquote expandable="${longAttr}"><a href="https://example.com/${'z'.repeat(200)}">${content}</a></blockquote>`;
+    // Should complete without OOM — just verify it returns chunks
+    const chunks = splitHtmlMessage(msg, 200);
+    expect(chunks.length).toBeGreaterThan(1);
+    // All content should be preserved across chunks
+    const allText = chunks.join('');
+    expect(allText).toContain('Y');
+  });
+
   it('produces valid chunks that each fit within maxLength (approximately)', () => {
     // Note: tag close/reopen can push slightly over, but raw content should respect limit
     const longContent = 'word '.repeat(500);

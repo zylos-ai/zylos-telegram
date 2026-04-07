@@ -184,9 +184,8 @@ function prepareMessage(text) {
   const textMode = cfg.message?.textMode || 'plain';
 
   if (textMode === 'html') {
-    // Always convert markdown to HTML
-    const html = markdownToHtml(text);
-    return { chunks: splitHtmlMessage(html, MAX_LENGTH), parseMode: 'HTML' };
+    // Trust upstream HTML — only split, don't convert
+    return { chunks: splitHtmlMessage(text, MAX_LENGTH), parseMode: 'HTML' };
   }
 
   if (textMode === 'markdown') {

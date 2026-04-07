@@ -128,8 +128,15 @@ export function markdownToHtml(text) {
   // Strikethrough: ~~text~~
   result = result.replace(/~~(.+?)~~/g, '<s>$1</s>');
 
-  // Links: [text](url)
-  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  // Links: [text](url) — with href attribute escaping and protocol whitelist
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, url) => {
+    // Only allow http/https protocols (already HTML-escaped, so &amp; etc.)
+    const decoded = url.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    if (!/^https?:\/\//i.test(decoded)) return `[${linkText}](${url})`;
+    // Escape href attribute value: & is already &amp;, escape " < >
+    const safeUrl = url.replace(/"/g, '&quot;');
+    return `<a href="${safeUrl}">${linkText}</a>`;
+  });
 
   // Step 6: Restore inline code
   for (let i = inlineCodes.length - 1; i >= 0; i--) {

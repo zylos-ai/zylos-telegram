@@ -27,8 +27,8 @@ function prepareMessage(text) {
   const MAX_LENGTH = 4000;
 
   if (textMode === 'html') {
-    const html = markdownToHtml(text);
-    return { chunks: splitHtmlMessage(html, MAX_LENGTH), parseMode: 'HTML' };
+    // Trust upstream HTML — only split, don't convert
+    return { chunks: splitHtmlMessage(text, MAX_LENGTH), parseMode: 'HTML' };
   }
 
   if (textMode === 'markdown') {
@@ -62,17 +62,30 @@ describe('send mode selection', () => {
   });
 
   describe('html mode', () => {
-    it('always applies HTML conversion', () => {
+    it('trusts upstream HTML — does not convert markdown', () => {
       vi.mocked(loadConfig).mockReturnValue({
         message: { textMode: 'html', context_messages: 5 },
         internal_port: 3460
       });
+      // Markdown syntax should pass through unchanged (no conversion)
       const result = prepareMessage('hello **world**');
       expect(result.parseMode).toBe('HTML');
-      expect(result.chunks[0]).toBe('hello <b>world</b>');
+      expect(result.chunks[0]).toBe('hello **world**');
     });
 
-    it('applies HTML conversion even to plain text', () => {
+    it('preserves raw HTML tags (does not escape them)', () => {
+      vi.mocked(loadConfig).mockReturnValue({
+        message: { textMode: 'html', context_messages: 5 },
+        internal_port: 3460
+      });
+      const result = prepareMessage('<b>bold</b> and <i>italic</i>');
+      expect(result.parseMode).toBe('HTML');
+      expect(result.chunks[0]).toBe('<b>bold</b> and <i>italic</i>');
+      // Must NOT escape the tags
+      expect(result.chunks[0]).not.toContain('&lt;');
+    });
+
+    it('sends plain text with HTML parse_mode', () => {
       vi.mocked(loadConfig).mockReturnValue({
         message: { textMode: 'html', context_messages: 5 },
         internal_port: 3460
@@ -123,7 +136,8 @@ describe('send mode selection', () => {
         message: { textMode: 'html', context_messages: 5 },
         internal_port: 3460
       });
-      const { chunks, parseMode } = prepareMessage('**bold** and `code`');
+      // In html mode, input is already HTML
+      const { chunks, parseMode } = prepareMessage('<b>bold</b> and <code>code</code>');
       expect(parseMode).toBe('HTML');
 
       // Simulate 400 error — fallback strips tags

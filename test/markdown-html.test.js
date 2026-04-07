@@ -59,6 +59,30 @@ describe('markdownToHtml', () => {
       expect(markdownToHtml('click [here](https://example.com)'))
         .toBe('click <a href="https://example.com">here</a>');
     });
+
+    it('escapes double quotes in href attribute', () => {
+      const result = markdownToHtml('click [here](https://a.com?q="1")');
+      expect(result).toBe('click <a href="https://a.com?q=&quot;1&quot;">here</a>');
+      // Must not break the attribute boundary
+      expect(result).not.toContain('href="https://a.com?q="');
+    });
+
+    it('rejects non-http protocols', () => {
+      expect(markdownToHtml('click [here](javascript:alert(1))'))
+        .toBe('click [here](javascript:alert(1))');
+      expect(markdownToHtml('click [here](data:text/html,<h1>x)'))
+        .toBe('click [here](data:text/html,&lt;h1&gt;x)');
+    });
+
+    it('allows https links', () => {
+      const result = markdownToHtml('click [here](https://example.com)');
+      expect(result).toContain('<a href="https://example.com">');
+    });
+
+    it('allows http links', () => {
+      const result = markdownToHtml('click [here](http://example.com)');
+      expect(result).toContain('<a href="http://example.com">');
+    });
   });
 
   describe('strikethrough', () => {
