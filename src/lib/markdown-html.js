@@ -144,9 +144,13 @@ export function markdownToHtml(text) {
   const codeBlocks = [];
   const inlineCodes = [];
   const tableBlocks = [];
+  const mdLinks = [];
+  const bareLinks = [];
   const codeBlockToken = (i) => `\x00CB${i}\x00`;
   const inlineCodeToken = (i) => `\x00IC${i}\x00`;
   const tableToken = (i) => `\x00TB${i}\x00`;
+  const mdLinkToken = (i) => `\x00ML${i}\x00`;
+  const bareLinkToken = (i) => `\x00BL${i}\x00`;
 
   // Step 1: Extract fenced code blocks before any processing
   let result = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
@@ -157,6 +161,24 @@ export function markdownToHtml(text) {
     } else {
       codeBlocks.push(`<pre>${escaped}</pre>`);
     }
+    return placeholder;
+  });
+
+  // Step 1.5: Extract all links before HTML escaping and inline formatting
+  // URLs contain characters (&, _, .) that would be mangled by escapeHtml
+  // or matched by italic/bold regex patterns.
+
+  // First: markdown links [text](url) — extract entire construct
+  result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, (_, text, url) => {
+    const placeholder = mdLinkToken(mdLinks.length);
+    mdLinks.push({ text, url });
+    return placeholder;
+  });
+
+  // Then: bare URLs (not already captured by markdown links)
+  result = result.replace(/(https?:\/\/[^\s<>\[\]"'`\x00]+)/g, (url) => {
+    const placeholder = bareLinkToken(bareLinks.length);
+    bareLinks.push(url);
     return placeholder;
   });
 
@@ -218,14 +240,11 @@ export function markdownToHtml(text) {
   // Strikethrough: ~~text~~
   result = result.replace(/~~(.+?)~~/g, '<s>$1</s>');
 
-  // Links: [text](url) — with href attribute escaping and protocol whitelist
+  // Links: non-http [text](url) — reject non-http protocols (http/https links
+  // were already extracted in Step 1.5; only non-http remain at this point)
   result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, url) => {
-    // Only allow http/https protocols (already HTML-escaped, so &amp; etc.)
-    const decoded = url.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-    if (!/^https?:\/\//i.test(decoded)) return `[${linkText}](${url})`;
-    // Escape href attribute value: & is already &amp;, escape " < >
-    const safeUrl = url.replace(/"/g, '&quot;');
-    return `<a href="${safeUrl}">${linkText}</a>`;
+    // Non-http protocols were not extracted — leave them as-is (escaped text)
+    return `[${linkText}](${url})`;
   });
 
   // Step 9a: Restore tables first (they may contain inline code placeholders)
@@ -241,6 +260,22 @@ export function markdownToHtml(text) {
   // Step 9c: Restore code blocks
   for (let i = codeBlocks.length - 1; i >= 0; i--) {
     result = result.replace(codeBlockToken(i), codeBlocks[i]);
+  }
+
+  // Step 9d: Restore markdown links as <a> tags
+  for (let i = mdLinks.length - 1; i >= 0; i--) {
+    const { text, url } = mdLinks[i];
+    const safeHref = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const safeText = escapeHtml(text);
+    result = result.replace(mdLinkToken(i), `<a href="${safeHref}">${safeText}</a>`);
+  }
+
+  // Step 9e: Restore bare URLs as <a> tags
+  for (let i = bareLinks.length - 1; i >= 0; i--) {
+    const url = bareLinks[i];
+    const safeHref = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const safeText = escapeHtml(url);
+    result = result.replace(bareLinkToken(i), `<a href="${safeHref}">${safeText}</a>`);
   }
 
   return result;
