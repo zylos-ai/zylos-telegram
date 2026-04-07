@@ -225,14 +225,14 @@ export function markdownToHtml(text) {
     return `<a href="${safeUrl}">${linkText}</a>`;
   });
 
-  // Step 9a: Restore inline code
-  for (let i = inlineCodes.length - 1; i >= 0; i--) {
-    result = result.replace(`\x00INLINECODE_${i}\x00`, inlineCodes[i]);
-  }
-
-  // Step 9b: Restore tables
+  // Step 9a: Restore tables first (they may contain inline code placeholders)
   for (let i = tableBlocks.length - 1; i >= 0; i--) {
     result = result.replace(`\x00TABLE_${i}\x00`, tableBlocks[i]);
+  }
+
+  // Step 9b: Restore inline code (after tables, so placeholders inside tables are resolved)
+  for (let i = inlineCodes.length - 1; i >= 0; i--) {
+    result = result.replace(`\x00INLINECODE_${i}\x00`, inlineCodes[i]);
   }
 
   // Step 9c: Restore code blocks

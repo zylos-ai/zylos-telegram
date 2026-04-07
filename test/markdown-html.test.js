@@ -220,6 +220,21 @@ describe('markdownToHtml', () => {
       const result = markdownToHtml(input);
       expect(result).toMatch(/^<pre>[\s\S]+<\/pre>$/);
     });
+
+    it('does not leak INLINECODE placeholder when cell contains inline code', () => {
+      const input = '| A |\n|---|\n| `x` |';
+      const result = markdownToHtml(input);
+      expect(result).not.toContain('INLINECODE');
+      expect(result).toContain('<code>x</code>');
+    });
+
+    it('handles cell with inline code + bold + link without placeholder leakage', () => {
+      const input = '| Col |\n|---|\n| `x` **b** [a](https://example.com) |';
+      const result = markdownToHtml(input);
+      expect(result).not.toContain('INLINECODE');
+      expect(result).not.toContain('TABLE_');
+      expect(result).toContain('<pre>');
+    });
   });
 
   describe('edge cases', () => {
