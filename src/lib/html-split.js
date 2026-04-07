@@ -109,6 +109,58 @@ function findSafeSplitPoint(html, position) {
 }
 
 /**
+ * Return the ending ';' index of a valid HTML entity starting at `start`,
+ * or -1 if no valid entity starts there.
+ */
+function findEntityEnd(html, start) {
+  if (html[start] !== '&') return -1;
+
+  let i = start + 1;
+  if (i >= html.length) return -1;
+
+  if (html[i] === '#') {
+    i++;
+    if (i >= html.length) return -1;
+
+    const isHex = html[i] === 'x' || html[i] === 'X';
+    if (isHex) {
+      i++;
+      const hexStart = i;
+      while (/[0-9A-Fa-f]/.test(html[i] || '')) i++;
+      if (i === hexStart) return -1;
+    } else {
+      const decStart = i;
+      while (/[0-9]/.test(html[i] || '')) i++;
+      if (i === decStart) return -1;
+    }
+  } else {
+    const nameStart = i;
+    while (/[A-Za-z0-9]/.test(html[i] || '')) i++;
+    if (i === nameStart) return -1;
+  }
+
+  return html[i] === ';' ? i : -1;
+}
+
+/**
+ * Avoid splitting in the middle of an HTML entity like "&amp;".
+ */
+function avoidEntityMidSplit(html, from, to) {
+  const segment = html.substring(from, to);
+  const lastAmp = segment.lastIndexOf('&');
+  if (lastAmp === -1) return to;
+
+  const lastSemi = segment.lastIndexOf(';');
+  if (lastAmp < lastSemi) return to;
+
+  const ampIndex = from + lastAmp;
+  const entityEnd = findEntityEnd(html, ampIndex);
+  if (entityEnd === -1 || entityEnd < to) return to;
+
+  return ampIndex;
+}
+
+/**
  * Split HTML message into chunks, preserving tag integrity.
  *
  * Strategy:
@@ -176,6 +228,9 @@ export function splitHtmlMessage(html, maxLength = DEFAULT_MAX_LENGTH) {
         if (html[i] === '<') { breakAt = i; break; }
       }
     }
+
+    // Avoid cutting right through "&...;" entities.
+    breakAt = avoidEntityMidSplit(html, pos, breakAt);
 
     // Safety: must make progress
     if (breakAt <= pos) breakAt = pos + Math.max(1, Math.floor(available));

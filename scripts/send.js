@@ -23,6 +23,7 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const PROXY_URL = process.env.TELEGRAM_PROXY_URL;
 const MAX_LENGTH = 4000;
 const INTERNAL_TOKEN = crypto.createHash('sha256').update(BOT_TOKEN || '').digest('hex');
+const PARSE_ERR_RE = /can't parse entities|parse entities|find end of the entity/i;
 
 // Parse arguments
 const args = process.argv.slice(2);
@@ -175,6 +176,11 @@ function splitMessage(text, maxLength) {
   return chunks;
 }
 
+function isTelegramParseError(err) {
+  const description = err?.telegramResponse?.description || err?.message || '';
+  return PARSE_ERR_RE.test(description);
+}
+
 /**
  * Determine text mode and prepare chunks accordingly.
  * Returns { chunks, parseMode } where parseMode is 'HTML' or null.
@@ -240,8 +246,8 @@ async function sendText(text) {
         try {
           await apiRequestWithRetry('sendMessage', params);
         } catch (retryErr) {
-          // If still 400 and we have parse_mode, fallback to plain text
-          if (params.parse_mode && retryErr.telegramResponse?.error_code === 400) {
+          // If still parse-entity error and we have parse_mode, fallback to plain text
+          if (params.parse_mode && retryErr.telegramResponse?.error_code === 400 && isTelegramParseError(retryErr)) {
             console.warn('[telegram] HTML parse failed, falling back to plain text');
             delete params.parse_mode;
             params.text = stripHtmlTags(chunks[i]);
@@ -250,7 +256,7 @@ async function sendText(text) {
             throw retryErr;
           }
         }
-      } else if (params.parse_mode && errCode === 400) {
+      } else if (params.parse_mode && errCode === 400 && isTelegramParseError(err)) {
         // HTML parse error — fallback to plain text (single retry)
         console.warn('[telegram] HTML parse failed, falling back to plain text');
         delete params.parse_mode;
