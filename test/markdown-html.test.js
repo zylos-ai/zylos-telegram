@@ -93,6 +93,77 @@ describe('markdownToHtml', () => {
       const result = markdownToHtml('click [here](http://example.com)');
       expect(result).toContain('<a href="http://example.com">');
     });
+
+    it('preserves & in markdown link query parameters', () => {
+      const result = markdownToHtml('click [here](https://example.com?a=1&b=2&c=3)');
+      // href must have &amp; for valid HTML, but Telegram decodes it back to &
+      expect(result).toBe('click <a href="https://example.com?a=1&amp;b=2&amp;c=3">here</a>');
+    });
+
+    it('preserves complex OAuth URL in markdown link', () => {
+      const url = 'https://accounts.google.com/o/oauth2/auth?scope=calendar&access_type=offline&redirect_uri=http://localhost&response_type=code&client_id=123.apps.googleusercontent.com';
+      const result = markdownToHtml(`[authorize](${url})`);
+      expect(result).toContain('<a href="');
+      expect(result).toContain('scope=calendar&amp;access_type=offline');
+      expect(result).toContain('response_type=code');
+      expect(result).not.toContain('&amp;amp;'); // no double-escaping
+    });
+  });
+
+  describe('bare URLs', () => {
+    it('wraps bare https URL in <a> tag', () => {
+      const result = markdownToHtml('visit https://example.com today');
+      expect(result).toBe('visit <a href="https://example.com">https://example.com</a> today');
+    });
+
+    it('wraps bare http URL in <a> tag', () => {
+      const result = markdownToHtml('visit http://example.com today');
+      expect(result).toBe('visit <a href="http://example.com">http://example.com</a> today');
+    });
+
+    it('preserves & in bare URL query parameters', () => {
+      const result = markdownToHtml('open https://example.com?a=1&b=2&c=3 now');
+      expect(result).toContain('href="https://example.com?a=1&amp;b=2&amp;c=3"');
+      // Display text also has HTML-escaped &
+      expect(result).toContain('>https://example.com?a=1&amp;b=2&amp;c=3</a>');
+    });
+
+    it('preserves complex OAuth bare URL', () => {
+      const url = 'https://accounts.google.com/o/oauth2/auth?scope=calendar&access_type=offline&response_type=code';
+      const result = markdownToHtml(`open this:\n${url}`);
+      expect(result).toContain('<a href="');
+      expect(result).toContain('scope=calendar&amp;access_type=offline');
+      expect(result).toContain('response_type=code');
+      expect(result).not.toContain('&amp;amp;'); // no double-escaping
+    });
+
+    it('handles bare URL at start of line', () => {
+      const result = markdownToHtml('https://example.com');
+      expect(result).toBe('<a href="https://example.com">https://example.com</a>');
+    });
+
+    it('handles bare URL with path and fragment', () => {
+      const result = markdownToHtml('see https://example.com/path/to/page#section');
+      expect(result).toContain('href="https://example.com/path/to/page#section"');
+    });
+
+    it('does not double-wrap markdown link URLs', () => {
+      const result = markdownToHtml('click [here](https://example.com?a=1&b=2)');
+      // Should have exactly one <a> tag, not nested
+      const aCount = (result.match(/<a /g) || []).length;
+      expect(aCount).toBe(1);
+    });
+
+    it('handles multiple bare URLs in same text', () => {
+      const result = markdownToHtml('visit https://a.com and https://b.com');
+      const aCount = (result.match(/<a /g) || []).length;
+      expect(aCount).toBe(2);
+    });
+
+    it('does not link non-http schemes', () => {
+      const result = markdownToHtml('not a link: ftp://example.com');
+      expect(result).not.toContain('<a');
+    });
   });
 
   describe('strikethrough', () => {
