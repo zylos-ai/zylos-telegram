@@ -65,7 +65,60 @@ export function hasMarkdownContent(text) {
   // Blockquotes (lines starting with >)
   if (/^>\s/m.test(text)) return true;
 
+  // Headers (# Title, ## Title, etc.)
+  if (/^\s{0,3}#{1,6}\s/m.test(text)) return true;
+
+  // Unordered lists (- item, * item)
+  if (/^\s*[-*]\s/m.test(text)) return true;
+
+  // Ordered lists (1. item, 2. item)
+  if (/^\s*\d+\.\s/m.test(text)) return true;
+
+  // Tables (| col | col |)
+  if (/\|.+\|.+\|/.test(text)) return true;
+
   return false;
+}
+
+/**
+ * Parse a markdown table (header row + separator row + data rows) into
+ * aligned text wrapped in `<pre>`.
+ *
+ * @param {string} block - The full matched table text (header + separator + rows)
+ * @returns {string} HTML `<pre>` block with aligned columns
+ */
+function formatTable(block) {
+  const lines = block.split('\n').filter(l => l.trim());
+
+  // Parse each row into cells, trimming whitespace around pipes
+  const parseRow = (line) =>
+    line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+
+  const headerCells = parseRow(lines[0]);
+  // lines[1] is the separator row — skip it during data parsing
+  const dataRows = lines.slice(2).map(parseRow);
+
+  // Calculate max width per column across header and all data rows
+  const colCount = headerCells.length;
+  const colWidths = headerCells.map(h => h.length);
+  for (const row of dataRows) {
+    for (let i = 0; i < colCount; i++) {
+      const cell = (row[i] || '');
+      if (cell.length > colWidths[i]) colWidths[i] = cell.length;
+    }
+  }
+
+  // Build padded rows
+  const pad = (str, width) => str + ' '.repeat(Math.max(0, width - str.length));
+  const formatRow = (cells) =>
+    cells.map((c, i) => pad(c || '', colWidths[i])).join('  ');
+
+  const headerLine = formatRow(headerCells);
+  const separator = colWidths.map(w => '-'.repeat(w)).join('  ');
+  const bodyLines = dataRows.map(formatRow);
+
+  const content = [headerLine, separator, ...bodyLines].join('\n');
+  return `<pre>${escapeHtml(content)}</pre>`;
 }
 
 /**
@@ -75,9 +128,12 @@ export function hasMarkdownContent(text) {
  * 1. Extract code blocks (protect from further parsing)
  * 2. Escape HTML in remaining text
  * 3. Extract inline code (protect from further parsing)
- * 4. Apply block-level formatting (blockquotes)
- * 5. Apply inline formatting (bold, italic, links, strikethrough)
- * 6. Restore code blocks and inline code
+ * 4. Extract tables into `<pre>` blocks (protect from inline formatting)
+ * 5. Convert headers to bold text
+ * 6. Convert list markers to Unicode bullets / consistent numbers
+ * 7. Apply block-level formatting (blockquotes)
+ * 8. Apply inline formatting (bold, italic, links, strikethrough)
+ * 9. Restore tables, inline code, and code blocks
  *
  * @param {string} text
  * @returns {string}
@@ -87,6 +143,7 @@ export function markdownToHtml(text) {
 
   const codeBlocks = [];
   const inlineCodes = [];
+  const tableBlocks = [];
 
   // Step 1: Extract fenced code blocks before any processing
   let result = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
@@ -110,13 +167,43 @@ export function markdownToHtml(text) {
     return placeholder;
   });
 
-  // Step 4: Blockquotes — group consecutive lines starting with >
+  // Step 4: Extract markdown tables into <pre> blocks
+  // A table is: header row | separator row (|---|) | one or more data rows
+  result = result.replace(
+    /(^\|.+\|[ \t]*\n\|[\s\-:|]+\|[ \t]*\n(?:\|.+\|[ \t]*(?:\n|$))+)/gm,
+    (tableMatch) => {
+      const placeholder = `\x00TABLE_${tableBlocks.length}\x00`;
+      // formatTable works on raw text (before HTML escaping of |),
+      // but | is not escaped by our escapeHtml, so this is fine.
+      // However &amp; etc. inside cells need to be un-escaped for formatting,
+      // then re-escaped inside formatTable. We pass through as-is since
+      // formatTable calls escapeHtml on the final content.
+      // We need to unescape first so the alignment math works on real chars.
+      const unescaped = tableMatch
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
+      tableBlocks.push(formatTable(unescaped));
+      return placeholder;
+    }
+  );
+
+  // Step 5: Headers — convert # Title to <b>Title</b>
+  result = result.replace(/^(\s{0,3})#{1,6}\s+(.+)$/gm, '$1<b>$2</b>');
+
+  // Step 6: Lists — convert markers to Unicode bullets / consistent numbers
+  // Unordered: - or * at start of line → •
+  result = result.replace(/^(\s*)[-*]\s+/gm, '$1• ');
+  // Ordered: keep number, normalize marker
+  result = result.replace(/^(\s*)(\d+)\.\s+/gm, '$1$2. ');
+
+  // Step 7: Blockquotes — group consecutive lines starting with >
   result = result.replace(/(^&gt;\s?.+(?:\n&gt;\s?.+)*)/gm, (match) => {
     const lines = match.split('\n').map(l => l.replace(/^&gt;\s?/, ''));
     return `<blockquote>${lines.join('\n')}</blockquote>`;
   });
 
-  // Step 5: Inline formatting
+  // Step 8: Inline formatting
   // Bold: **text** or __text__
   result = result.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
   result = result.replace(/__(.+?)__/g, '<b>$1</b>');
@@ -138,12 +225,17 @@ export function markdownToHtml(text) {
     return `<a href="${safeUrl}">${linkText}</a>`;
   });
 
-  // Step 6: Restore inline code
+  // Step 9a: Restore inline code
   for (let i = inlineCodes.length - 1; i >= 0; i--) {
     result = result.replace(`\x00INLINECODE_${i}\x00`, inlineCodes[i]);
   }
 
-  // Step 7: Restore code blocks
+  // Step 9b: Restore tables
+  for (let i = tableBlocks.length - 1; i >= 0; i--) {
+    result = result.replace(`\x00TABLE_${i}\x00`, tableBlocks[i]);
+  }
+
+  // Step 9c: Restore code blocks
   for (let i = codeBlocks.length - 1; i >= 0; i--) {
     result = result.replace(`\x00CODEBLOCK_${i}\x00`, codeBlocks[i]);
   }
