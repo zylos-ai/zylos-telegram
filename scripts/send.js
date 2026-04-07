@@ -181,7 +181,7 @@ function splitMessage(text, maxLength) {
  */
 function prepareMessage(text) {
   const cfg = loadConfig();
-  const textMode = cfg.message?.textMode || 'plain';
+  const textMode = cfg.message?.textMode || 'markdown';
 
   if (textMode === 'html') {
     // Trust upstream HTML — only split, don't convert
@@ -198,7 +198,7 @@ function prepareMessage(text) {
     return { chunks: splitMessage(text, MAX_LENGTH), parseMode: null };
   }
 
-  // plain mode (default) — no conversion
+  // plain mode — no conversion
   return { chunks: splitMessage(text, MAX_LENGTH), parseMode: null };
 }
 

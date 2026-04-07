@@ -27,7 +27,7 @@ export const DEFAULT_CONFIG = {
   },
   message: {
     context_messages: 5,
-    textMode: 'plain'           // 'plain' | 'markdown' | 'html'
+    textMode: 'markdown'        // 'plain' | 'markdown' | 'html'
   },
   internal_port: 3460         // Port for internal HTTP server (record-outgoing)
 };
