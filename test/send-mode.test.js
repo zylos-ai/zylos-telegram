@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../src/lib/config.js', () => ({
   DATA_DIR: '/tmp/test-telegram',
   loadConfig: vi.fn(() => ({
-    message: { textMode: 'markdown', context_messages: 5 },
+    message: { textMode: 'plain', context_messages: 5 },
     internal_port: 3460
   }))
 }));
@@ -23,7 +23,7 @@ import { loadConfig } from '../src/lib/config.js';
  */
 function prepareMessage(text) {
   const cfg = loadConfig();
-  const textMode = cfg.message?.textMode || 'markdown';
+  const textMode = cfg.message?.textMode || 'plain';
   const MAX_LENGTH = 4000;
 
   if (textMode === 'html') {
@@ -176,14 +176,13 @@ describe('send mode selection', () => {
   });
 
   describe('default config', () => {
-    it('defaults to markdown when textMode not set', () => {
+    it('defaults to plain when textMode not set', () => {
       vi.mocked(loadConfig).mockReturnValue({
         message: { context_messages: 5 },
         internal_port: 3460
       });
       const result = prepareMessage('hello **world**');
-      expect(result.parseMode).toBe('HTML');
-      expect(result.chunks[0]).toBe('hello <b>world</b>');
+      expect(result.parseMode).toBeNull();
     });
   });
 });
