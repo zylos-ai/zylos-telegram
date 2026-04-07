@@ -20,6 +20,10 @@ function escapeHtml(text) {
     .replace(/>/g, '&gt;');
 }
 
+function escapeHtmlAttr(text) {
+  return escapeHtml(text).replace(/"/g, '&quot;');
+}
+
 /**
  * Strip HTML tags from text (for fallback to plain text).
  *
@@ -265,7 +269,7 @@ export function markdownToHtml(text) {
   // Step 9d: Restore markdown links as <a> tags
   for (let i = mdLinks.length - 1; i >= 0; i--) {
     const { text, url } = mdLinks[i];
-    const safeHref = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const safeHref = escapeHtmlAttr(url);
     const safeText = escapeHtml(text);
     result = result.replace(mdLinkToken(i), `<a href="${safeHref}">${safeText}</a>`);
   }
@@ -273,7 +277,7 @@ export function markdownToHtml(text) {
   // Step 9e: Restore bare URLs as <a> tags
   for (let i = bareLinks.length - 1; i >= 0; i--) {
     const url = bareLinks[i];
-    const safeHref = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const safeHref = escapeHtmlAttr(url);
     const safeText = escapeHtml(url);
     result = result.replace(bareLinkToken(i), `<a href="${safeHref}">${safeText}</a>`);
   }

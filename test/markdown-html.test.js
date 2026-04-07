@@ -77,6 +77,11 @@ describe('markdownToHtml', () => {
       expect(result).not.toContain('href="https://a.com?q="');
     });
 
+    it('escapes angle brackets in href attribute', () => {
+      const result = markdownToHtml('click [here](https://a.com?q=<x>)');
+      expect(result).toBe('click <a href="https://a.com?q=&lt;x&gt;">here</a>');
+    });
+
     it('rejects non-http protocols', () => {
       expect(markdownToHtml('click [here](javascript:alert(1))'))
         .toBe('click [here](javascript:alert(1))');

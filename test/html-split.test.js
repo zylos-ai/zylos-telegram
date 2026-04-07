@@ -104,4 +104,13 @@ describe('splitHtmlMessage', () => {
       expect(chunk.length).toBeLessThan(250); // 200 + generous tag overhead
     }
   });
+
+  it('does not split in the middle of HTML entities', () => {
+    const msg = `<b>${'A'.repeat(30)} &amp; ${'B'.repeat(30)}</b>`;
+    const chunks = splitHtmlMessage(msg, 40);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk).not.toMatch(/&[a-zA-Z0-9#]*$/);
+    }
+  });
 });
