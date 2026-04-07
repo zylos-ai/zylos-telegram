@@ -6,7 +6,7 @@
   "main": "src/bot.js",
   "scripts": {
     "start": "node src/bot.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run"
   },
   "homepage": "https://github.com/zylos-ai/zylos-telegram#readme",
   "bugs": {
@@ -26,6 +26,9 @@
   "license": "MIT",
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.1.1"
   },
   "dependencies": {
     "telegraf": "^4.16.3",

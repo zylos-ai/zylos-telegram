@@ -26,7 +26,8 @@ export const DEFAULT_CONFIG = {
     download_media: true
   },
   message: {
-    context_messages: 5
+    context_messages: 5,
+    textMode: 'plain'           // 'plain' | 'markdown' | 'html'
   },
   internal_port: 3460         // Port for internal HTTP server (record-outgoing)
 };
