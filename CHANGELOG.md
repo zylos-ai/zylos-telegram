@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-04-07
+
+### Changed
+- Default `message.textMode` changed from `plain` to `markdown`, including `send.js` fallback behavior when `textMode` is not set (#51)
+
+### Fixed
+- Prevent markdown placeholder leakage (`INLINECODE*`) in mixed inline-code text by switching to markdown-safe internal tokens (#50)
+- Added regression coverage for mixed inline-code values to prevent placeholder leakage regressions (#50)
+
 ## [0.2.4] - 2026-03-17
 
 ### Added
