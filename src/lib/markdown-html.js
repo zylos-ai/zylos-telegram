@@ -144,11 +144,14 @@ export function markdownToHtml(text) {
   const codeBlocks = [];
   const inlineCodes = [];
   const tableBlocks = [];
+  const codeBlockToken = (i) => `\x00CB${i}\x00`;
+  const inlineCodeToken = (i) => `\x00IC${i}\x00`;
+  const tableToken = (i) => `\x00TB${i}\x00`;
 
   // Step 1: Extract fenced code blocks before any processing
   let result = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
     const escaped = escapeHtml(code.replace(/\n$/, ''));
-    const placeholder = `\x00CODEBLOCK_${codeBlocks.length}\x00`;
+    const placeholder = codeBlockToken(codeBlocks.length);
     if (lang) {
       codeBlocks.push(`<pre><code class="language-${lang}">${escaped}</code></pre>`);
     } else {
@@ -162,7 +165,7 @@ export function markdownToHtml(text) {
 
   // Step 3: Extract inline code (after HTML escaping so backtick content is safe)
   result = result.replace(/`([^`]+)`/g, (_, code) => {
-    const placeholder = `\x00INLINECODE_${inlineCodes.length}\x00`;
+    const placeholder = inlineCodeToken(inlineCodes.length);
     inlineCodes.push(`<code>${code}</code>`);
     return placeholder;
   });
@@ -172,7 +175,7 @@ export function markdownToHtml(text) {
   result = result.replace(
     /(^\|.+\|[ \t]*\n\|[\s\-:|]+\|[ \t]*\n(?:\|.+\|[ \t]*(?:\n|$))+)/gm,
     (tableMatch) => {
-      const placeholder = `\x00TABLE_${tableBlocks.length}\x00`;
+      const placeholder = tableToken(tableBlocks.length);
       // formatTable works on raw text (before HTML escaping of |),
       // but | is not escaped by our escapeHtml, so this is fine.
       // However &amp; etc. inside cells need to be un-escaped for formatting,
@@ -227,17 +230,17 @@ export function markdownToHtml(text) {
 
   // Step 9a: Restore tables first (they may contain inline code placeholders)
   for (let i = tableBlocks.length - 1; i >= 0; i--) {
-    result = result.replace(`\x00TABLE_${i}\x00`, tableBlocks[i]);
+    result = result.replace(tableToken(i), tableBlocks[i]);
   }
 
   // Step 9b: Restore inline code (after tables, so placeholders inside tables are resolved)
   for (let i = inlineCodes.length - 1; i >= 0; i--) {
-    result = result.replace(`\x00INLINECODE_${i}\x00`, inlineCodes[i]);
+    result = result.replace(inlineCodeToken(i), inlineCodes[i]);
   }
 
   // Step 9c: Restore code blocks
   for (let i = codeBlocks.length - 1; i >= 0; i--) {
-    result = result.replace(`\x00CODEBLOCK_${i}\x00`, codeBlocks[i]);
+    result = result.replace(codeBlockToken(i), codeBlocks[i]);
   }
 
   return result;

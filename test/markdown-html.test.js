@@ -30,6 +30,16 @@ describe('markdownToHtml', () => {
     it('does not parse markdown inside inline code', () => {
       expect(markdownToHtml('use `**not bold**`')).toBe('use <code>**not bold**</code>');
     });
+
+    it('does not leak internal placeholders in mixed inline-code list text', () => {
+      const input = '字段：`message.textMode`\n可选值：`plain` / `markdown` / `html`';
+      const result = markdownToHtml(input);
+      expect(result).not.toContain('INLINECODE');
+      expect(result).not.toContain('IC');
+      expect(result).toContain('<code>plain</code>');
+      expect(result).toContain('<code>markdown</code>');
+      expect(result).toContain('<code>html</code>');
+    });
   });
 
   describe('code blocks', () => {
