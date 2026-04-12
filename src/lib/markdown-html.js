@@ -57,8 +57,8 @@ export function hasMarkdownContent(text) {
 
   // Italic (*...*) — single asterisk not preceded/followed by space
   if (/(?<!\*)\*(?!\s)[^*]+(?<!\s)\*(?!\*)/.test(text)) return true;
-  // Italic (_..._) — single underscore
-  if (/(?<!_)_(?!\s)[^_]+(?<!\s)_(?!_)/.test(text)) return true;
+  // Italic (_..._) — single underscore, not intraword (e.g. snake_case)
+  if (/(?<![\w_])_(?!\s)[^_]+(?<!\s)_(?![\w_])/.test(text)) return true;
 
   // Links [text](url)
   if (/\[[^\]]+\]\([^)]+\)/.test(text)) return true;
@@ -238,8 +238,10 @@ export function markdownToHtml(text) {
   result = result.replace(/__(.+?)__/g, '<b>$1</b>');
 
   // Italic: *text* or _text_ (single, not double)
+  // Underscore italic requires non-word chars around the delimiters to avoid
+  // matching intraword underscores like snake_case or created_at.
   result = result.replace(/(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)/g, '<i>$1</i>');
-  result = result.replace(/(?<!_)_(?!\s)(.+?)(?<!\s)_(?!_)/g, '<i>$1</i>');
+  result = result.replace(/(?<![\w_])_(?!\s)(.+?)(?<!\s)_(?![\w_])/g, '<i>$1</i>');
 
   // Strikethrough: ~~text~~
   result = result.replace(/~~(.+?)~~/g, '<s>$1</s>');

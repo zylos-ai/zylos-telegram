@@ -20,6 +20,30 @@ describe('markdownToHtml', () => {
     it('converts _text_ to <i>', () => {
       expect(markdownToHtml('hello _world_')).toBe('hello <i>world</i>');
     });
+
+    it('does not convert intraword underscores to italic (snake_case)', () => {
+      expect(markdownToHtml('snake_case_name')).toBe('snake_case_name');
+    });
+
+    it('does not convert underscores in identifiers like created_at', () => {
+      expect(markdownToHtml('the created_at column')).toBe('the created_at column');
+    });
+
+    it('does not convert underscores in multi-segment identifiers', () => {
+      expect(markdownToHtml('a_b_c_d')).toBe('a_b_c_d');
+    });
+
+    it('preserves underscored identifiers in list items', () => {
+      expect(markdownToHtml('- created_at and updated_at')).toBe('• created_at and updated_at');
+    });
+
+    it('still converts _italic_ surrounded by non-word chars', () => {
+      expect(markdownToHtml('(_italic_)')).toBe('(<i>italic</i>)');
+    });
+
+    it('still converts _multi word italic_', () => {
+      expect(markdownToHtml('_multi word italic_')).toBe('<i>multi word italic</i>');
+    });
   });
 
   describe('inline code', () => {
@@ -409,5 +433,17 @@ describe('hasMarkdownContent', () => {
 
   it('returns false for empty string', () => {
     expect(hasMarkdownContent('')).toBe(false);
+  });
+
+  it('returns false for intraword underscores (snake_case)', () => {
+    expect(hasMarkdownContent('snake_case_name')).toBe(false);
+  });
+
+  it('returns false for identifiers like created_at', () => {
+    expect(hasMarkdownContent('the created_at column')).toBe(false);
+  });
+
+  it('detects _italic_ with non-word boundaries', () => {
+    expect(hasMarkdownContent('hello _world_')).toBe(true);
   });
 });
