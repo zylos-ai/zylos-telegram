@@ -39,16 +39,18 @@ if (fs.existsSync(configPath)) {
       migrated = true;
       migrations.push('Added features.download_media');
     }
-    // Clean up dead config fields
+    // Clean up dead config fields (preserve prior values under _legacy_*)
     if (config.features.auto_split_messages !== undefined) {
+      config._legacy_features_auto_split_messages = config.features.auto_split_messages;
       delete config.features.auto_split_messages;
       migrated = true;
-      migrations.push('Removed dead features.auto_split_messages');
+      migrations.push('Removed dead features.auto_split_messages (preserved as _legacy_features_auto_split_messages)');
     }
     if (config.features.max_message_length !== undefined) {
+      config._legacy_features_max_message_length = config.features.max_message_length;
       delete config.features.max_message_length;
       migrated = true;
-      migrations.push('Removed dead features.max_message_length');
+      migrations.push('Removed dead features.max_message_length (preserved as _legacy_features_max_message_length)');
     }
 
     // Migration 2: Add allowed_groups if missing (skip if already using v0.2 groups map)
@@ -82,6 +84,7 @@ if (fs.existsSync(configPath)) {
         config.dmPolicy = 'owner';
       }
       migrations.push(`Migrated whitelist → dmPolicy=${config.dmPolicy}, ${(config.dmAllowFrom || []).length} users in dmAllowFrom`);
+      config._legacy_whitelist = config.whitelist;
       delete config.whitelist;
       migrated = true;
     }
@@ -157,13 +160,16 @@ if (fs.existsSync(configPath)) {
         };
       }
 
-      // Remove legacy fields
+      // Preserve and remove legacy fields
+      if (config.allowed_groups !== undefined) config._legacy_allowed_groups = config.allowed_groups;
+      if (config.smart_groups !== undefined) config._legacy_smart_groups = config.smart_groups;
+      if (config.group_whitelist !== undefined) config._legacy_group_whitelist = config.group_whitelist;
       delete config.allowed_groups;
       delete config.smart_groups;
       delete config.group_whitelist;
 
       migrated = true;
-      migrations.push(`Migrated ${Object.keys(config.groups).length} groups to unified groups map`);
+      migrations.push(`Migrated ${Object.keys(config.groups).length} groups to unified groups map (legacy fields preserved as _legacy_*)`);
     }
 
     // Migration 9: Ensure groupPolicy exists
