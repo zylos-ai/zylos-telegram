@@ -15,6 +15,28 @@
 import fs from 'fs';
 import path from 'path';
 
+function timestampSuffix() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+function backupConfigFile(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  const backupPath = `${filePath}.backup.${timestampSuffix()}`;
+  fs.copyFileSync(filePath, backupPath);
+  return backupPath;
+}
+
+function atomicWriteJSON(filePath, obj) {
+  const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+  try {
+    fs.writeFileSync(tmpPath, JSON.stringify(obj, null, 2));
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath); } catch {}
+    throw err;
+  }
+}
+
 const HOME = process.env.HOME;
 const DATA_DIR = path.join(HOME, 'zylos/components/telegram');
 const configPath = path.join(DATA_DIR, 'config.json');
@@ -194,11 +216,11 @@ if (fs.existsSync(configPath)) {
       migrations.push('Created typing/ directory');
     }
 
-    // Save if migrated (atomic: write tmp then rename)
+    // Save if migrated
     if (migrated) {
-      const tmpPath = configPath + '.tmp';
-      fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2));
-      fs.renameSync(tmpPath, configPath);
+      const backupPath = backupConfigFile(configPath);
+      if (backupPath) console.log(`[post-upgrade] Backed up config to ${path.basename(backupPath)}`);
+      atomicWriteJSON(configPath, config);
       console.log('Config migrations applied:');
       migrations.forEach(m => console.log('  - ' + m));
     } else {
