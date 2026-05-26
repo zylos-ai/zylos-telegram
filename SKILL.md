@@ -125,7 +125,8 @@ pm2 restart zylos-telegram   # Restart service
 ## Owner
 
 First user to interact with the bot becomes the owner (admin).
-Owner always bypasses all access checks (DM and group) regardless of policy settings.
+Owner bypasses allowlist checks only (DM allowlist and per-group allowFrom).
+`groupPolicy: disabled` blocks all group messages, including from the owner.
 
 ## Access Control
 
