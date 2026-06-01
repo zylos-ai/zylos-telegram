@@ -30,6 +30,7 @@ import {
   startPersistInterval,
   persistUserCache
 } from './lib/user-cache.js';
+import { recordMember } from './lib/members.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -431,6 +432,7 @@ bot.on('my_chat_member', (ctx) => {
  * Handle /start command
  */
 bot.start((ctx) => {
+  recordMember(ctx);
   config = loadConfig();
 
   if (!hasOwner(config)) {
@@ -453,6 +455,7 @@ bot.start((ctx) => {
  * Handle text messages
  */
 bot.on('text', (ctx) => {
+  recordMember(ctx);
   if (ctx.message.text.startsWith('/')) return;
   config = loadConfig();
 
@@ -596,6 +599,7 @@ bot.on('text', (ctx) => {
  * Handle photo messages
  */
 bot.on('photo', async (ctx) => {
+  recordMember(ctx);
   const config = loadConfig();
 
   const chatType = ctx.chat.type;
@@ -762,6 +766,7 @@ bot.on('photo', async (ctx) => {
  * Handle document messages
  */
 bot.on('document', async (ctx) => {
+  recordMember(ctx);
   const config = loadConfig();
 
   const chatType = ctx.chat.type;
@@ -928,6 +933,7 @@ bot.on('document', async (ctx) => {
  * Handle voice messages — download and transcribe via local Whisper (Option A: transparent ASR)
  */
 bot.on('voice', async (ctx) => {
+  recordMember(ctx);
   const config = loadConfig();
   const chatType = ctx.chat.type;
   const chatId = ctx.chat.id;

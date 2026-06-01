@@ -216,6 +216,15 @@ if (fs.existsSync(configPath)) {
       migrations.push('Created typing/ directory');
     }
 
+    // Migration 13: Initialize empty members cache file
+    // (lazy-created on first write too, but creating it here makes the
+    //  existence explicit for first-run admin commands).
+    const membersPath = path.join(DATA_DIR, 'members.json');
+    if (!fs.existsSync(membersPath)) {
+      fs.writeFileSync(membersPath, '{}\n');
+      migrations.push('Created empty members.json (username → user_id cache)');
+    }
+
     // Save if migrated
     if (migrated) {
       const backupPath = backupConfigFile(configPath);
@@ -288,5 +297,26 @@ if (fs.existsSync(logsDir)) {
     console.warn(`[post-upgrade] Log split failed (non-fatal): ${err.message}`);
   }
 }
+
+// First-run notice for the members cache feature (only when the cache
+// file is empty — i.e. upgrade from a pre-cache version).
+const membersFile = path.join(DATA_DIR, 'members.json');
+try {
+  const raw = fs.existsSync(membersFile) ? fs.readFileSync(membersFile, 'utf8').trim() : '';
+  if (!raw || raw === '{}') {
+    console.log(`
+[post-upgrade] New: members cache (username → user_id)
+  The bot now passively records observed @username → user_id mappings as
+  messages flow through, so admin.js commands can accept @username args
+  for previously-seen users. Lookup:
+      node admin.js list-members
+      node admin.js resolve @someone
+  Used implicitly by:
+      node admin.js set-group-allowfrom <chatId> @user1 @user2 ...
+      node admin.js add-dm-allow @user
+  Cache: ${membersFile}
+`);
+  }
+} catch {}
 
 console.log('\n[post-upgrade] Complete!');

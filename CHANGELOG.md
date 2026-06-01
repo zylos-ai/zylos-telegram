@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Members cache** (`~/zylos/components/telegram/members.json`): passive
+  `@username → user_id` mapping populated from observed messages (text /
+  photo / document / voice / `/start`). Telegram Bot API has no direct
+  username → id resolver for regular users, so the cache fills the gap so
+  admin.js commands can accept `@username` arguments for users the bot
+  has previously seen.
+- `admin.js list-members` — list all cached `@username → user_id` entries.
+- `admin.js resolve <@username>` — look up a single username.
+- `admin.js add-dm-allow @username` and
+  `admin.js set-group-allowfrom <chat_id> @user1 @user2 ...` now resolve
+  `@username` arguments via the cache before storing. Numeric ids and `*`
+  pass through unchanged. Unknown @usernames are stored as literals with
+  a warning — the group filter requires numeric ids, so the command can
+  be re-run once the user is seen to resolve them.
+- post-upgrade hook creates an empty `members.json` and prints a one-time
+  notice describing the new commands.
+
+### Changed
+- The members cache stores ids (which are stable), so `allowFrom` lists
+  written by `set-group-allowfrom @user` are immune to subsequent
+  username changes — `@user` may change to `@user2` later, but the stored
+  numeric id still identifies the same person.
+
 ## [0.3.6] - 2026-05-18
 
 ### Fixed

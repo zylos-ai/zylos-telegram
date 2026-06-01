@@ -8,6 +8,23 @@
 
 import { loadConfig, saveConfig } from './lib/config.js';
 import { addGroup, removeGroup } from './lib/auth.js';
+import { resolveUsername, listMembers } from './lib/members.js';
+
+// Resolve `@username` to numeric user_id via the members cache.
+// Returns the original argument unchanged if it's already numeric (or starts
+// without `@`), or if the cache has no entry. The caller decides whether a
+// fallback is acceptable.
+function resolveUserArg(arg) {
+  const s = String(arg);
+  if (!s.startsWith('@')) return s;          // numeric id or bare username — pass through
+  const id = resolveUsername(s);
+  if (id) {
+    console.log(`  ${s} → ${id} (from members cache)`);
+    return id;
+  }
+  console.warn(`  WARN: ${s} not in members cache — storing literal. The bot has not seen this user yet; ask them to message the bot once, then re-run this command to resolve to a numeric id.`);
+  return s;
+}
 
 // Commands
 const commands = {
@@ -117,7 +134,8 @@ const commands = {
 
   'set-group-allowfrom': (chatId, ...userIds) => {
     if (!chatId || userIds.length === 0) {
-      console.error('Usage: admin.js set-group-allowfrom <chat_id> <user_ids...>');
+      console.error('Usage: admin.js set-group-allowfrom <chat_id> <user_ids_or_@usernames...>');
+      console.error('  Special value: * (allow all members)');
       process.exit(1);
     }
 
@@ -127,13 +145,18 @@ const commands = {
       process.exit(1);
     }
 
-    config.groups[String(chatId)].allowFrom = userIds.map(String);
+    // Resolve every @username via the members cache. `*` and numeric ids
+    // pass through unchanged. Unknown @usernames are stored literally with
+    // a warning — group filter requires numeric ids so unresolved entries
+    // won't match until the user is seen and the command is re-run.
+    const resolved = userIds.map(u => u === '*' ? '*' : resolveUserArg(u));
+
+    config.groups[String(chatId)].allowFrom = resolved.map(String);
     if (!saveConfig(config)) {
       console.error('[telegram] Failed to save config to disk');
       process.exit(1);
     }
     console.log(`Set allowFrom for ${chatId}: ${config.groups[String(chatId)].allowFrom.join(', ')}`);
-    console.log('Run: pm2 restart zylos-telegram');
   },
 
   'set-group-history-limit': (chatId, limit) => {
@@ -197,24 +220,27 @@ const commands = {
       console.error('Usage: admin.js add-dm-allow <chat_id_or_@username>');
       process.exit(1);
     }
+    // If `@username` and we've seen the user, prefer storing the numeric id
+    // (immune to subsequent username changes). Falls back to the literal
+    // @username, which isDmAllowed() also accepts as a string match.
+    const resolved = resolveUserArg(value);
     const config = loadConfig();
     if (!Array.isArray(config.dmAllowFrom)) {
       config.dmAllowFrom = [];
     }
-    if (!config.dmAllowFrom.includes(value)) {
-      config.dmAllowFrom.push(value);
+    if (!config.dmAllowFrom.includes(resolved)) {
+      config.dmAllowFrom.push(resolved);
       if (!saveConfig(config)) {
         console.error('[telegram] Failed to save config to disk');
         process.exit(1);
       }
-      console.log(`Added ${value} to dmAllowFrom`);
+      console.log(`Added ${resolved} to dmAllowFrom`);
     } else {
-      console.log(`${value} already in dmAllowFrom`);
+      console.log(`${resolved} already in dmAllowFrom`);
     }
     if ((config.dmPolicy || 'owner') !== 'allowlist') {
       console.log(`Note: dmPolicy is "${config.dmPolicy || 'owner'}", set to "allowlist" for this to take effect.`);
     }
-    console.log('Run: pm2 restart zylos-telegram');
   },
 
   'remove-dm-allow': (value) => {
@@ -306,6 +332,34 @@ const commands = {
     }
   },
 
+  'list-members': () => {
+    const map = listMembers();
+    const entries = Object.entries(map);
+    if (entries.length === 0) {
+      console.log('Members cache is empty. Cache fills as users send messages in chats where the bot is present.');
+      return;
+    }
+    console.log(`Members cache (${entries.length} usernames → user_id):`);
+    entries.sort(([a], [b]) => a.localeCompare(b));
+    for (const [username, id] of entries) {
+      console.log(`  @${username}  →  ${id}`);
+    }
+  },
+
+  resolve: (value) => {
+    if (!value) {
+      console.error('Usage: admin.js resolve <@username>');
+      process.exit(1);
+    }
+    const id = resolveUsername(value);
+    if (id) {
+      console.log(`${value} → ${id}`);
+    } else {
+      console.log(`${value} → not in cache (user has not sent a message visible to the bot yet)`);
+      process.exit(1);
+    }
+  },
+
   help: () => {
     console.log(`
 zylos-telegram admin CLI
@@ -319,7 +373,8 @@ Commands:
   remove-group <chat_id>                         Remove group
   set-group-policy <open|allowlist|disabled>     Set global group policy
   set-group-mode <chat_id> <mention|smart>       Set group mode
-  set-group-allowfrom <chat_id> <user_ids...>    Set allowed sender IDs (use * for all)
+  set-group-allowfrom <chat_id> <ids_or_@usernames...>  Set allowed senders (* for all;
+                                                  @username resolved via members cache if seen)
   set-group-history-limit <chat_id> <limit>      Set per-group history limit
 
   DM Access Control:
@@ -334,6 +389,11 @@ Commands:
   remove-whitelist <chat_id|username> <value>    → remove-dm-allow
 
   show-owner                                     Show current owner
+
+  Members Cache (auto-populated from observed messages):
+  list-members                                   Show @username → user_id mappings
+  resolve <@username>                            Look up a single username
+
   help                                           Show this help
 
 Permission flow:
