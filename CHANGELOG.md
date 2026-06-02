@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-02
+
 ### Changed
 - **BREAKING (group access)**: Bot joining a group now branches on the
   inviter:
