@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.4.0] - 2026-06-02
+
+### Changed
+- **BREAKING (group access)**: Bot joining a group now branches on the
+  inviter:
+  - **Owner invited** → the group is auto-configured, but locked to
+    `allowFrom: [<ownerId>]` (owner-only — *not* the admin-CLI default
+    `['*']`). The bot stays silent in the group on join; no in-group
+    notice is posted. This gives the group a logged context immediately
+    (so subsequent messages — including from members the owner has not
+    yet authorized — are recorded in `logs/<chatId>.log`) while keeping
+    bot access locked down until the owner adds more senders via
+    `admin.js set-group-allowfrom`.
+  - **Non-owner invited** → the group is **not** added. The bot stays
+    silent in the group; the owner is DM'd the exact `admin.js add-group`
+    command to authorize manually if desired.
+
+  Previous behavior added every owner-invited group with
+  `allowFrom: ['*']` (opening bot access to everyone in the group on
+  arrival). The new flow keeps the same owner-as-inviter convenience but
+  defaults to owner-only access, matching the principle of least privilege.
+
+  Re-joining an already-configured group remains a no-op (existing
+  allowlist entry is preserved).
+
+- `addGroup(config, chatId, name, mode, opts)` in `src/lib/auth.js` gained
+  an optional `opts.allowFrom` parameter (array of user-id strings) to
+  override the default `['*']` initial allowlist. The admin CLI path
+  (`admin.js add-group`) is unchanged and still opts into `['*']`.
+
 ## [0.3.6] - 2026-05-18
 
 ### Fixed

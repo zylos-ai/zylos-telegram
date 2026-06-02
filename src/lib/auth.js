@@ -178,17 +178,24 @@ export function getGroupName(config, chatId, chatTitle) {
  * @param {string|number} chatId
  * @param {string} name
  * @param {'mention'|'smart'} [mode='mention']
+ * @param {{allowFrom?: string[]}} [opts] - optional initial allowFrom override
+ *   (e.g. `['<owner-user-id>']` for owner-invited groups). Defaults to `['*']`
+ *   for back-compat with the admin CLI flow.
  * @returns {boolean} true if added, false if already exists
  */
-export function addGroup(config, chatId, name, mode = 'mention') {
+export function addGroup(config, chatId, name, mode = 'mention', opts = {}) {
   chatId = String(chatId);
   if (!config.groups) config.groups = {};
   if (config.groups[chatId]) return false;
 
+  const allowFrom = Array.isArray(opts.allowFrom) && opts.allowFrom.length > 0
+    ? opts.allowFrom.map(String)
+    : ['*'];
+
   config.groups[chatId] = {
     name,
     mode,
-    allowFrom: ['*'],
+    allowFrom,
     historyLimit: config.message?.context_messages || 5,
     added_at: new Date().toISOString()
   };

@@ -1,6 +1,6 @@
 ---
 name: telegram
-version: 0.3.6
+version: 0.4.0
 description: >-
   Telegram Bot communication channel (long polling mode, works behind firewalls).
   Use when: (1) replying to Telegram messages (DM or group @mentions),
@@ -142,6 +142,26 @@ DM and group access are controlled by independent policies:
 
 Per-group options: `mode` (mention/smart), `allowFrom` (restrict senders), `historyLimit`.
 
+### Group join behavior (on bot invite)
+
+The bot branches on who invited it:
+
+- **Owner invited** → group is auto-configured with `allowFrom: [<ownerId>]`
+  (owner-only — *not* the admin-CLI default `['*']`). The bot stays silent
+  in the group on join; no in-group notice is posted. This gives the
+  group a logged context immediately (so subsequent messages — including
+  from members the owner has not yet authorized — are recorded in
+  `logs/<chatId>.log` for later id resolution) while keeping access
+  locked down until the owner explicitly authorizes more senders via
+  `admin.js set-group-allowfrom`.
+
+- **Non-owner invited** → group is **not** added. The bot stays silent in
+  the group; the owner is DM'd the exact `admin.js add-group` command to
+  authorize manually if desired.
+
+Re-joining an already-configured group is a no-op (the existing
+`config.groups[chatId]` entry stays valid).
+
 ## Admin CLI
 
 Manage bot configuration via `admin.js`:
@@ -174,6 +194,69 @@ $ADM set-group-history-limit <chat_id> <n>    # Set per-group context message li
 ```
 
 After changes, restart: `pm2 restart zylos-telegram`
+
+## Resolving @username to user_id from message logs
+
+Telegram Bot API has no direct `@username → user_id` resolver for regular
+users, and `config.groups.<chatId>.allowFrom` requires **numeric** user_ids
+to match (the auth check is a strict `array.includes(senderId)`). Storing
+`@username` literally in `allowFrom` will silently fail to match.
+
+But the bot already logs every processed message per group as one JSON line
+per row, with `user_id` (numeric) and `user_name` (the @username at the
+time of the message) included. Because owner-invited groups land
+**configured** (with `allowFrom: [<ownerId>]`), the text handler logs
+every incoming message *before* the per-sender `allowFrom` rejection
+fires — so a non-allowed member's `user_id` ends up in
+`logs/<chatId>.log` the first time they @-mention the bot, even though
+the bot replies with the no-permission notice. So when the owner says
+*"allow @felix to access you in this group"*, the workflow is:
+
+1. Pick the right log file by chat:
+
+   ```
+   ~/zylos/components/telegram/logs/<chatId>.log
+   ```
+
+   (Owner usually says this *inside* the group; `<chatId>` is the current
+   chat. For DM allowlist, scan **all** log files.)
+
+2. Grep for the target user_name:
+
+   ```bash
+   grep -E '"user_name":"felixl0707"' \
+     ~/zylos/components/telegram/logs/-5298485474.log | head -1
+   ```
+
+   Extract `user_id` from the JSON (e.g., `8614077771`). The log captures
+   the id even when the message didn't @-mention this bot — any message
+   in an authorized group is logged.
+
+3. Apply the change via admin.js, **including the owner's own id** so they
+   don't lock themselves out:
+
+   ```bash
+   node ~/zylos/.claude/skills/telegram/src/admin.js \
+     set-group-allowfrom <chatId> <target-id> <owner-id>
+   ```
+
+   `config.json` hot-reloads — no `pm2 restart` needed.
+
+4. Confirm to the owner:
+   - Which numeric id was resolved
+   - The new `allowFrom` value
+   - That all other group members are now blocked
+
+If the target user has never sent any message in any of the bot's logged
+chats, no log entry exists yet. In that case:
+- Ask them to @-mention the bot once **in an owner-configured group**
+  (any group the owner invited the bot into — those land configured
+  owner-only, so non-allowed members can be logged on first interaction
+  even though the bot rejects them at the per-sender check), OR
+- Get the numeric chat_id from the owner directly.
+
+`logs/<chatId>.log` is also the source of truth for in-group message
+history; this section only describes how to use it for ID resolution.
 
 ## Group Context
 

@@ -393,8 +393,23 @@ function notifyOwnerPendingGroup(chatId, chatTitle, addedBy) {
 
 /**
  * Handle bot being added to a group.
- * Uses my_chat_member exclusively — this is the reliable event for bot status changes.
- * new_chat_members is NOT used for bot-self-add to avoid duplicate messages (#43).
+ *
+ * Branches on whether the inviter is the bot owner:
+ *
+ *   Owner invited → auto-configure the group, but lock it to owner-only
+ *     (`allowFrom: [ownerId]`, NOT the admin-CLI default `['*']`). The bot
+ *     stays silent in the group on join; no in-group notice is posted.
+ *     This gives the group a logged context immediately while keeping
+ *     access restricted until the owner authorizes additional users via
+ *     `admin.js set-group-allowfrom`.
+ *
+ *   Non-owner invited → do NOT add the group. Bot stays silent in the
+ *     group; owner is DM'd the exact `admin.js add-group` command to
+ *     authorize manually if desired.
+ *
+ * Uses my_chat_member exclusively — this is the reliable event for bot
+ * status changes. new_chat_members is NOT used for bot-self-add to avoid
+ * duplicate messages (#43).
  */
 bot.on('my_chat_member', (ctx) => {
   const update = ctx.myChatMember;
@@ -413,18 +428,28 @@ bot.on('my_chat_member', (ctx) => {
   const chatId = chat.id;
   const chatTitle = chat.title || 'Unknown Group';
   const addedById = String(update.from.id);
+  const addedByDisplay = update.from.username || update.from.first_name || addedById;
 
-  if (String(config.owner?.chat_id) === addedById) {
-    const added = addGroup(config, chatId, chatTitle, 'mention');
-    if (added) {
-      bot.telegram.sendMessage(chatId, `Group added. Members can now @${bot.botInfo?.username} to chat.`).catch(() => {});
-    } else {
-      bot.telegram.sendMessage(chatId, 'Group is already configured.').catch(() => {});
-    }
-  } else {
-    bot.telegram.sendMessage(chatId, 'Bot joined, but requires admin approval to respond.').catch(() => {});
-    notifyOwnerPendingGroup(chatId, chatTitle, update.from.username || update.from.first_name || addedById);
+  // If the group is already configured, no action needed (bot was kicked
+  // and re-added — the existing allowlist entry is still valid).
+  if (config.groups?.[chatId]) {
+    console.log(`[telegram] Re-joined existing group ${chatId} (${chatTitle}) — no action`);
+    return;
   }
+
+  const ownerId = config.owner?.chat_id ? String(config.owner.chat_id) : null;
+  const invitedByOwner = ownerId && addedById === ownerId;
+
+  if (invitedByOwner) {
+    // Owner-invited: auto-configure, but locked to owner only.
+    addGroup(config, chatId, chatTitle, 'mention', { allowFrom: [ownerId] });
+    console.log(`[telegram] Owner-invited group ${chatId} (${chatTitle}) — configured owner-only`);
+    return;
+  }
+
+  // Non-owner invited: do not authorize; stay silent in the group.
+  console.log(`[telegram] Non-owner-invited group ${chatId} (${chatTitle}) by ${addedByDisplay} — not added`);
+  notifyOwnerPendingGroup(chatId, chatTitle, addedByDisplay);
 });
 
 /**
