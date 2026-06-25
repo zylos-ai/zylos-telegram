@@ -13,6 +13,7 @@ import { execFileSync } from 'child_process';
 import dotenv from 'dotenv';
 import { parseEndpoint } from '../src/lib/utils.js';
 import { DATA_DIR, loadConfig } from '../src/lib/config.js';
+import { redactSecrets } from '../src/lib/redact.js';
 import { markdownToHtml, hasMarkdownContent, stripHtmlTags } from '../src/lib/markdown-html.js';
 import { splitHtmlMessage } from '../src/lib/html-split.js';
 
@@ -415,7 +416,7 @@ async function main() {
 
   } catch (err) {
     markTypingDone();
-    console.error(`Error: ${err.message}`);
+    console.error(`Error: ${redactSecrets(err.message)}`);
     process.exit(1);
   }
 }

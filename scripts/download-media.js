@@ -11,6 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import dotenv from 'dotenv';
+import { redactSecrets } from '../src/lib/redact.js';
 
 const HOME = process.env.HOME;
 dotenv.config({ path: path.join(HOME, 'zylos/.env') });
@@ -64,6 +65,6 @@ try {
   console.log(localPath);
   console.error(`Downloaded: ${localPath} (${stats.size} bytes)`);
 } catch (err) {
-  console.error(`Download failed: ${err.message}`);
+  console.error(`Download failed: ${redactSecrets(err.message)}`);
   process.exit(1);
 }

@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import { getEnv } from './config.js';
+import { redactSecrets } from './redact.js';
 
 export const MEDIA_DIR = path.join(process.env.HOME, 'zylos/components/telegram/media');
 
@@ -31,20 +32,6 @@ function sleep(ms) {
 }
 
 /**
- * Redact Telegram bot tokens from a string before it reaches any log.
- *
- * The download URL embeds the token as `bot<token>/...`, and child-process
- * errors (e.g. from curl via execFile) include the full command line. Scrub
- * any `bot<token>` occurrence so the secret never lands in PM2 logs.
- *
- * @param {*} value - Any value; coerced to string.
- * @returns {string}
- */
-function redactToken(value) {
-  return String(value ?? '').replace(/bot[^/\s]+/g, 'bot<redacted>');
-}
-
-/**
  * Run an async operation with retry and incremental backoff.
  *
  * Downloads route through a local proxy (mihomo) to reach Telegram, and the
@@ -66,14 +53,14 @@ async function withRetry(fn, label, attempts = 3) {
       lastError = error;
       if (attempt < attempts) {
         const delay = 500 * attempt; // incremental backoff: 500ms, 1000ms, ...
-        console.warn(`[telegram] ${label} failed (attempt ${attempt}/${attempts}): ${redactToken(error.message)}. Retrying in ${delay}ms`);
+        console.warn(`[telegram] ${label} failed (attempt ${attempt}/${attempts}): ${redactSecrets(error.message)}. Retrying in ${delay}ms`);
         await sleep(delay);
       }
     }
   }
   // Re-throw with a redacted message so a bot token embedded in the underlying
   // error (e.g. Telegraf's request URL) never reaches the caller's logs.
-  throw new Error(`${label} failed after ${attempts} attempts: ${redactToken(lastError && lastError.message)}`);
+  throw new Error(`${label} failed after ${attempts} attempts: ${redactSecrets(lastError && lastError.message)}`);
 }
 
 /**
