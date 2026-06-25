@@ -24,6 +24,43 @@ function generateFilename(prefix, ext) {
 }
 
 /**
+ * Sleep for the given number of milliseconds.
+ */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Run an async operation with retry and incremental backoff.
+ *
+ * Downloads route through a local proxy (mihomo) to reach Telegram, and the
+ * proxy occasionally drops the connection during the TLS handshake
+ * ("socket disconnected before secure TLS connection was established").
+ * These failures are transient — an immediate retry almost always succeeds.
+ *
+ * @param {Function} fn - Async operation to attempt: () => Promise<T>
+ * @param {string} label - Short label for log output
+ * @param {number} attempts - Maximum attempts (default 3)
+ * @returns {Promise<T>}
+ */
+async function withRetry(fn, label, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        const delay = 500 * attempt; // incremental backoff: 500ms, 1000ms, ...
+        console.warn(`[telegram] ${label} failed (attempt ${attempt}/${attempts}): ${error.message}. Retrying in ${delay}ms`);
+        await sleep(delay);
+      }
+    }
+  }
+  throw lastError;
+}
+
+/**
  * Download file from Telegram
  * @param {Object} ctx - Telegraf context
  * @param {string} fileId - Telegram file_id
@@ -34,8 +71,8 @@ export async function downloadFile(ctx, fileId, prefix = 'file') {
   const botToken = getEnv('TELEGRAM_BOT_TOKEN');
   const proxyUrl = getEnv('TELEGRAM_PROXY_URL');
 
-  // Get file info from Telegram
-  const file = await ctx.telegram.getFile(fileId);
+  // Get file info from Telegram (retried — proxy TLS handshakes drop transiently)
+  const file = await withRetry(() => ctx.telegram.getFile(fileId), 'getFile');
   const filePath = file.file_path;
   const ext = path.extname(filePath) || '.bin';
 
@@ -46,8 +83,8 @@ export async function downloadFile(ctx, fileId, prefix = 'file') {
   // Download URL
   const fileUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
 
-  // Download using curl (supports proxy), with timeout
-  return new Promise((resolve, reject) => {
+  // Download using curl (supports proxy), with timeout — retried on transient failures
+  await withRetry(() => new Promise((resolve, reject) => {
     const args = ['-s', '--fail', '--max-time', '30', '-o', localPath];
     if (proxyUrl) {
       args.push('--proxy', proxyUrl);
@@ -58,11 +95,13 @@ export async function downloadFile(ctx, fileId, prefix = 'file') {
       if (error) {
         reject(new Error(`Download failed: ${error.message}`));
       } else {
-        console.log(`[telegram] Downloaded: ${localPath}`);
         resolve(localPath);
       }
     });
-  });
+  }), 'curl download');
+
+  console.log(`[telegram] Downloaded: ${localPath}`);
+  return localPath;
 }
 
 /**
