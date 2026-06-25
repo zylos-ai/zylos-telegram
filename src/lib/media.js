@@ -31,6 +31,20 @@ function sleep(ms) {
 }
 
 /**
+ * Redact Telegram bot tokens from a string before it reaches any log.
+ *
+ * The download URL embeds the token as `bot<token>/...`, and child-process
+ * errors (e.g. from curl via execFile) include the full command line. Scrub
+ * any `bot<token>` occurrence so the secret never lands in PM2 logs.
+ *
+ * @param {*} value - Any value; coerced to string.
+ * @returns {string}
+ */
+function redactToken(value) {
+  return String(value ?? '').replace(/bot[^/\s]+/g, 'bot<redacted>');
+}
+
+/**
  * Run an async operation with retry and incremental backoff.
  *
  * Downloads route through a local proxy (mihomo) to reach Telegram, and the
@@ -52,12 +66,14 @@ async function withRetry(fn, label, attempts = 3) {
       lastError = error;
       if (attempt < attempts) {
         const delay = 500 * attempt; // incremental backoff: 500ms, 1000ms, ...
-        console.warn(`[telegram] ${label} failed (attempt ${attempt}/${attempts}): ${error.message}. Retrying in ${delay}ms`);
+        console.warn(`[telegram] ${label} failed (attempt ${attempt}/${attempts}): ${redactToken(error.message)}. Retrying in ${delay}ms`);
         await sleep(delay);
       }
     }
   }
-  throw lastError;
+  // Re-throw with a redacted message so a bot token embedded in the underlying
+  // error (e.g. Telegraf's request URL) never reaches the caller's logs.
+  throw new Error(`${label} failed after ${attempts} attempts: ${redactToken(lastError && lastError.message)}`);
 }
 
 /**
@@ -93,7 +109,13 @@ export async function downloadFile(ctx, fileId, prefix = 'file') {
 
     execFile('curl', args, { timeout: 35000 }, (error) => {
       if (error) {
-        reject(new Error(`Download failed: ${error.message}`));
+        // error.message includes the full curl command line — and the URL in it
+        // carries the bot token. Never surface it; report only the safe exit
+        // code / signal so the secret cannot leak into logs.
+        const cause = error.signal
+          ? `signal ${error.signal}`
+          : (error.code !== undefined ? `exit ${error.code}` : 'unknown error');
+        reject(new Error(`curl download failed (${cause})`));
       } else {
         resolve(localPath);
       }
