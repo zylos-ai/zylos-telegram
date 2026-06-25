@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import dotenv from 'dotenv';
+import { redactSecrets } from '../src/lib/redact.js';
 
 dotenv.config({ path: path.join(process.env.HOME, 'zylos/.env') });
 
@@ -86,6 +87,6 @@ try {
   await downloadFile(filePath, localPath);
   console.log(localPath);
 } catch (err) {
-  console.error(`Error: ${err.message}`);
+  console.error(`Error: ${redactSecrets(err.message)}`);
   process.exit(1);
 }

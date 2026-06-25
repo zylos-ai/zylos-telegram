@@ -20,6 +20,7 @@ import {
   getGroupName, addGroup
 } from './lib/auth.js';
 import { downloadPhoto, downloadDocument, downloadVoice } from './lib/media.js';
+import { redactUrlCreds } from './lib/redact.js';
 import {
   logAndRecord, ensureReplay, getHistory,
   formatMessage
@@ -47,7 +48,7 @@ const proxyUrl = getEnv('TELEGRAM_PROXY_URL');
 const botOptions = {};
 
 if (proxyUrl) {
-  console.log(`[telegram] Using proxy: ${proxyUrl}`);
+  console.log(`[telegram] Using proxy: ${redactUrlCreds(proxyUrl)}`);
   botOptions.telegram = {
     agent: new HttpsProxyAgent(proxyUrl)
   };
@@ -1209,7 +1210,7 @@ bot.launch({
   allowedUpdates: ['message', 'my_chat_member']
 }).then(() => {
   console.log('[telegram] zylos-telegram v0.2.0 started');
-  console.log(`[telegram] Proxy: ${proxyUrl || 'none'}`);
+  console.log(`[telegram] Proxy: ${proxyUrl ? redactUrlCreds(proxyUrl) : 'none'}`);
   console.log(`[telegram] Bot: @${bot.botInfo?.username}`);
 }).catch((err) => {
   console.error('[telegram] Failed to start bot:', err.message);
