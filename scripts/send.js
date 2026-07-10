@@ -16,6 +16,7 @@ import { DATA_DIR, loadConfig } from '../src/lib/config.js';
 import { redactSecrets } from '../src/lib/redact.js';
 import { markdownToHtml, hasMarkdownContent, stripHtmlTags } from '../src/lib/markdown-html.js';
 import { splitHtmlMessage } from '../src/lib/html-split.js';
+import { withSendRetry } from '../src/lib/send-retry.js';
 
 // Load .env from ~/zylos/.env (not cwd which may be comm-bridge directory)
 dotenv.config({ path: path.join(process.env.HOME, 'zylos/.env') });
@@ -69,7 +70,7 @@ function apiRequest(method, params) {
   if (params.photo || params.document) {
     const filePath = params.photo || params.document;
     const fieldName = params.photo ? 'photo' : 'document';
-    const args = ['-s', '--max-time', '30', '-X', 'POST'];
+    const args = ['-s', '--max-time', '30', '--write-out', '\n%{http_code}', '-X', 'POST'];
     if (PROXY_URL) args.push('--proxy', PROXY_URL);
     args.push(url, '-F', `chat_id=${params.chat_id}`, '-F', `${fieldName}=@${filePath}`);
     if (params.reply_to_message_id) {
@@ -81,37 +82,39 @@ function apiRequest(method, params) {
     result = execFileSync('curl', args, { encoding: 'utf8', timeout: 35000 });
   } else {
     const jsonData = JSON.stringify(params);
-    const textArgs = ['-s', '--max-time', '30', '-X', 'POST', url,
+    const textArgs = ['-s', '--max-time', '30', '--write-out', '\n%{http_code}', '-X', 'POST', url,
       '-H', 'Content-Type: application/json', '-d', jsonData];
     if (PROXY_URL) textArgs.splice(1, 0, '--proxy', PROXY_URL);
     result = execFileSync('curl', textArgs, { encoding: 'utf8', timeout: 35000 });
   }
-  const response = JSON.parse(result);
+  const statusMatch = result.match(/\n(\d{3})$/);
+  if (!statusMatch) {
+    throw new Error('Telegram API response did not include an HTTP status');
+  }
+  const httpStatus = Number(statusMatch[1]);
+  const body = result.slice(0, statusMatch.index);
+
+  let response;
+  try {
+    response = JSON.parse(body);
+  } catch (cause) {
+    const err = new Error(`Telegram API returned invalid JSON (HTTP ${httpStatus})`, { cause });
+    err.httpStatus = httpStatus;
+    throw err;
+  }
   if (response.ok) return response.result;
 
   const err = new Error(response.description || 'API error');
   err.telegramResponse = response;
+  err.httpStatus = httpStatus;
   throw err;
 }
 
 /**
- * API request with 429 retry.
+ * API request with channel-owned transient failure retry.
  */
-async function apiRequestWithRetry(method, params, maxRetries = 2) {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return apiRequest(method, params);
-    } catch (err) {
-      const tgErr = err.telegramResponse;
-      if (tgErr?.error_code === 429 && attempt < maxRetries) {
-        const retryAfter = (tgErr.parameters?.retry_after || 5) * 1000;
-        console.warn(`[telegram] Rate limited, retrying in ${retryAfter}ms`);
-        await sleep(retryAfter);
-        continue;
-      }
-      throw err;
-    }
-  }
+function apiRequestWithRetry(method, params) {
+  return withSendRetry(() => apiRequest(method, params));
 }
 
 function splitMessage(text, maxLength) {
