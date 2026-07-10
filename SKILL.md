@@ -9,6 +9,9 @@ description: >-
   (4) managing group access control (groupPolicy, per-group allowFrom, smart/mention modes),
   (5) configuring the bot (admin CLI, proxy settings),
   (6) troubleshooting Telegram bot connection or polling issues.
+  IMPORTANT: Before sending media or using any command, read this SKILL.md first
+  if you have not loaded the exact syntax in the current session. Do not guess
+  command flags.
   Config at ~/zylos/components/telegram/config.json. Service: pm2 zylos-telegram.
 type: communication
 
