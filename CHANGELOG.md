@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-10
+
+### Fixed
+- Retry file downloads on transient TLS failures (#65)
+- Retry transient Telegram send failures in `scripts/send.js` — classify-and-retry
+  for curl transport errors, HTTP 5xx, and 429 (honoring `retry_after` within a
+  10s retry-delay budget); other 4xx are not retried; max 2 retries with ~4s
+  interval; each retry is logged (#66, #68)
+
+### Documentation
+- SKILL.md frontmatter now instructs readers to load the exact command syntax
+  from SKILL.md before sending media or using commands — do not guess flags
+  (#42, #67)
+
 ## [0.4.0] - 2026-06-02
 
 ### Changed
