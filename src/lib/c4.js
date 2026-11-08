@@ -1,0 +1,122 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { sessionGroupFromEndpoint } from './session-group.js';
+
+export function getC4ReceivePath() {
+  return path.join(process.env.ZYLOS_DIR || path.join(process.env.HOME, 'zylos'),
+    '.claude/skills/comm-bridge/scripts/c4-receive.js');
+}
+
+export function c4ReceiveSupportsOption(name) {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(
+      path.join(path.dirname(getC4ReceivePath()), 'c4-receive-options.json'), 'utf8'));
+    return manifest !== null && typeof manifest === 'object' && !Array.isArray(manifest)
+      && manifest.options !== null && typeof manifest.options === 'object'
+      && !Array.isArray(manifest.options) && Object.hasOwn(manifest.options, name);
+  } catch {
+    return false;
+  }
+}
+
+export function buildC4ReceiveArgs({ source, endpoint, content, sessionGroup }) {
+  const args = ['--channel', source, '--endpoint', endpoint, '--json', '--content', content];
+  if (sessionGroup != null && sessionGroup !== '' && c4ReceiveSupportsOption('--session-group')) {
+    args.push('--session-group', sessionGroup);
+  }
+  return args;
+}
+
+export const GENERIC_REJECT_REPLY = "Sorry, I couldn't take this message right now. Please try again later.";
+
+/**
+ * Decide what to do with a structured c4-receive rejection.
+ * Core's error text is written for the agent, never for the Telegram user.
+ * - persisted is a non-empty array: the inbound row was committed (e.g. a
+ *   post-commit status notice failed). Do not reply and do not resend.
+ * - anything else: reply with a generic notice; the raw text stays in logs.
+ * @param {object} response - parsed `{ ok: false, error }` JSON
+ * @returns {'committed'|'rejected'}
+ */
+export function classifyC4Rejection(response) {
+  const persisted = response?.error?.persisted;
+  return Array.isArray(persisted) && persisted.length > 0 ? 'committed' : 'rejected';
+}
+
+/**
+ * Parse c4-receive JSON response from stdout.
+ * Returns parsed object or null if parsing fails.
+ */
+export function parseC4Response(stdout) {
+  if (!stdout) return null;
+  try {
+    return JSON.parse(stdout.trim());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Send message to Claude via C4.
+ * The session group is derived from the endpoint and passed only when the
+ * installed Core lists --session-group (rechecked on every call, including the retry).
+ * A rejected group is never dropped and resent to the overall group.
+ * @param {string} source - Channel name
+ * @param {string} endpoint - Endpoint ID
+ * @param {string} content - Message content
+ * @param {function} [onReject] - Callback with a user-facing notice when the message was not taken
+ * @param {object} [opts]
+ * @param {number} [opts.retryDelayMs=2000]
+ * @param {function} [opts.onDone] - Test hook: called with the final outcome
+ */
+export function sendToC4(source, endpoint, content, onReject, { retryDelayMs = 2000, onDone } = {}) {
+  if (!content) {
+    console.error('[telegram] sendToC4 called with empty content');
+    return;
+  }
+  const sessionGroup = sessionGroupFromEndpoint(endpoint);
+  const done = outcome => { if (onDone) onDone(outcome); };
+
+  const run = cb => execFile(process.execPath,
+    [getC4ReceivePath(), ...buildC4ReceiveArgs({ source, endpoint, content, sessionGroup })],
+    { encoding: 'utf8', timeout: 30000 }, cb);
+
+  // Structured rejection: Core's text is written for the agent, so it only goes to the log.
+  const handleRejection = (response, label) => {
+    const { code, message } = response.error;
+    if (classifyC4Rejection(response) === 'committed') {
+      console.warn(`[telegram] C4 ${label} after commit (${code}), not resending: ${message}`);
+      return done('committed');
+    }
+    console.warn(`[telegram] C4 ${label} (${code}) [group=${sessionGroup}]: ${message}`);
+    if (onReject) onReject(GENERIC_REJECT_REPLY);
+    return done('rejected');
+  };
+
+  run((error, stdout) => {
+    if (!error) {
+      console.log(`[telegram] Sent to C4: ${content.substring(0, 50)}...`);
+      return done('sent');
+    }
+    const response = parseC4Response(stdout);
+    if (response && response.ok === false && response.error) return handleRejection(response, 'rejected');
+    // Unexpected failure (node crash, etc.) - retry once
+    console.warn(`[telegram] C4 send failed, retrying in ${retryDelayMs}ms: ${error.message}`);
+    setTimeout(() => {
+      run((retryError, retryStdout) => {
+        if (!retryError) {
+          console.log(`[telegram] Sent to C4 (retry): ${content.substring(0, 50)}...`);
+          return done('sent');
+        }
+        const retryResponse = parseC4Response(retryStdout);
+        if (retryResponse && retryResponse.ok === false && retryResponse.error) {
+          return handleRejection(retryResponse, 'rejected after retry');
+        }
+        console.error(`[telegram] C4 send failed after retry: ${retryError.message}`);
+        if (onReject) onReject(GENERIC_REJECT_REPLY);
+        return done('failed');
+      });
+    }, retryDelayMs);
+  });
+}

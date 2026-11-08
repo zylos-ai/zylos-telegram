@@ -99,6 +99,37 @@ Telegram file_ids are permanent — they can be downloaded at any time.
 
 Output: local file path on success, error message on failure.
 
+## Session Groups (multi-session Core)
+
+With a zylos-core that supports multi-session, each inbound message carries a
+session group, so every DM, group and forum topic gets its own conversation
+thread. Replies still go through the same `reply via` path; nothing changes on
+the sending side.
+
+| Conversation | Session group | Example |
+|---|---|---|
+| Private chat | `dm-<chat id>` | `dm-8101553026` |
+| Group / supergroup | `group<chat id>` (chat id keeps its minus sign) | `group-1001234567890` |
+| Forum topic | `group<chat id>:topic-<topic id>` | `group-1001234567890:topic-42` |
+
+- Only messages Telegram marks as forum-topic messages are split by topic. Reply
+  chains in ordinary groups and the forum "General" area stay in the group.
+- When a basic group is upgraded to a supergroup its chat id changes, so it
+  continues in a new session group (not merged).
+- The group is passed only if the installed Core lists `--session-group` in
+  `c4-receive-options.json`; older Cores behave exactly as before.
+- If Core rejects a message, the user gets a generic notice and Core's raw text
+  goes only to the component log. A rejected group is never dropped and resent
+  to the overall group. If Core reports the message as already stored, the
+  component neither replies nor resends.
+
+Look up the group for a reply endpoint (prints the in-group name; exits 1 on an
+invalid endpoint):
+
+```bash
+node ~/zylos/.claude/skills/telegram/scripts/session-group.js "<endpoint>"
+```
+
 ## Config Location
 
 - Config: `~/zylos/components/telegram/config.json`
