@@ -209,7 +209,7 @@ export function formatMessage(opts) {
     prefix = `[TG GROUP:${escapeXml(groupName || 'group')}]`;
   }
 
-  const parts = [`${prefix} ${escapeXml(userName)} said: `];
+  const parts = [`${prefix}\n`];
 
   // Context (group or thread)
   if (contextMessages && contextMessages.length > 0) {
@@ -233,7 +233,7 @@ export function formatMessage(opts) {
   }
 
   // Current message
-  parts.push(`<current-message>\n${escapeXml(text)}\n</current-message>`);
+  parts.push(`<current-message>\n${escapeXml(userName)} said: ${escapeXml(text)}\n</current-message>`);
 
   let message = parts.join('');
 

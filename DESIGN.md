@@ -141,8 +141,9 @@ User sends a message
       │ 1. Owner binding (first-time user)
       │ 2. Whitelist verification
       │ 3. formatMessage() formats the message
-      │    "[TG DM] username said: message content"
-      │    "[TG GROUP:groupname] username said: message content"
+      │    line 1: "[TG DM]" or "[TG GROUP:groupname]"
+      │    optional <group-context>/<thread-context>, <replying-to>
+      │    <current-message>username said: message content</current-message>
       ▼
 ┌─────────────┐
 │ c4-receive  │  comm-bridge interface
@@ -201,15 +202,38 @@ node send.js "8101553026" "[MEDIA:file]/path/to/document.pdf"
 
 **Incoming message format:**
 
+The source label is on its own first line; the speaker is inside
+`<current-message>` (same layout as zylos-lark). Text and names are XML-escaped.
+
 ```
 # Private chat
-[TG DM] howardzhou said: Hello
+[TG DM]
+<current-message>
+howardzhou said: Hello
+</current-message>
 
-# Group @mention
-[TG GROUP:dev-team] howardzhou said: @bot can you look this up
+# Group @mention, with recent group messages and a quoted reply
+[TG GROUP:dev-team]
+<group-context>
+[amy]: the build failed again
+</group-context>
 
-# With image
-[TG DM] howardzhou said: [sent an image] What is this ---- file: ~/zylos/components/telegram/media/photos/xxx.jpg
+<replying-to>
+[amy]: the build failed again
+</replying-to>
+
+<current-message>
+howardzhou said: @bot can you look this up
+</current-message>
+
+# Forum topic: <thread-context> instead of <group-context>. A direct post in a
+# topic has no <replying-to> (the topic's creation message is not a reply).
+
+# Photo with caption "What is this" (local file path appended after the closing tag)
+[TG DM]
+<current-message>
+howardzhou said: What is this
+</current-message> ---- file: ~/zylos/components/telegram/media/photos/xxx.jpg
 ```
 
 **Routing info (appended by c4-receive):**
