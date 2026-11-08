@@ -29,19 +29,24 @@ export function buildC4ReceiveArgs({ source, endpoint, content, sessionGroup }) 
 }
 
 export const GENERIC_REJECT_REPLY = "Sorry, I couldn't take this message right now. Please try again later.";
+export const UNCERTAIN_REPLY = "Sorry, this message may not have reached me. If you don't get a reply in a few minutes, please send it again.";
 
 /**
  * Decide what to do with a structured c4-receive rejection.
  * Core's error text is written for the agent, never for the Telegram user.
  * - persisted is a non-empty array: the inbound row was committed (e.g. a
  *   post-commit status notice failed). Do not reply and do not resend.
- * - anything else: reply with a generic notice; the raw text stays in logs.
+ * - persisted is an empty array: nothing was stored; ask the user to try later.
+ * - anything else (null, or absent on older Cores): Core cannot say whether it
+ *   stored the message; tell the user it may not have arrived.
+ * In every case the raw text stays in logs.
  * @param {object} response - parsed `{ ok: false, error }` JSON
- * @returns {'committed'|'rejected'}
+ * @returns {'committed'|'not_stored'|'uncertain'}
  */
 export function classifyC4Rejection(response) {
   const persisted = response?.error?.persisted;
-  return Array.isArray(persisted) && persisted.length > 0 ? 'committed' : 'rejected';
+  if (!Array.isArray(persisted)) return 'uncertain';
+  return persisted.length > 0 ? 'committed' : 'not_stored';
 }
 
 /**
@@ -92,8 +97,9 @@ export function sendToC4(source, endpoint, content, onReject, { retryDelayMs = 2
       if (onReject) onReject(null);
       return done('committed');
     }
-    console.warn(`[telegram] C4 ${label} (${code}) [group=${sessionGroup}]: ${message}`);
-    if (onReject) onReject(GENERIC_REJECT_REPLY);
+    const kind = classifyC4Rejection(response);
+    console.warn(`[telegram] C4 ${label} (${code}, ${kind}) [group=${sessionGroup}]: ${message}`);
+    if (onReject) onReject(kind === 'not_stored' ? GENERIC_REJECT_REPLY : UNCERTAIN_REPLY);
     return done('rejected');
   };
 
@@ -117,7 +123,7 @@ export function sendToC4(source, endpoint, content, onReject, { retryDelayMs = 2
           return handleRejection(retryResponse, 'rejected after retry');
         }
         console.error(`[telegram] C4 send failed after retry: ${retryError.message}`);
-        if (onReject) onReject(GENERIC_REJECT_REPLY);
+        if (onReject) onReject(UNCERTAIN_REPLY);
         return done('failed');
       });
     }, retryDelayMs);

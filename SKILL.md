@@ -118,10 +118,13 @@ the sending side.
   continues in a new session group (not merged).
 - The group is passed only if the installed Core lists `--session-group` in
   `c4-receive-options.json`; older Cores behave exactly as before.
-- If Core rejects a message, the user gets a generic notice and Core's raw text
-  goes only to the component log. A rejected group is never dropped and resent
-  to the overall group. If Core reports the message as already stored, the
-  component neither replies nor resends.
+- If Core rejects a message, Core's raw text goes only to the component log. The
+  user gets "please try again later" when Core says nothing was stored, and
+  "this message may not have reached me; resend if there is no reply in a few
+  minutes" when Core cannot say (or c4-receive fails twice). A rejected group is
+  never dropped and resent to the overall group. If Core reports the message as
+  already stored, the component sends nothing, does not resend, and clears the
+  typing indicator and reaction.
 
 Look up the group for a reply endpoint (prints the in-group name; exits 1 on an
 invalid endpoint):

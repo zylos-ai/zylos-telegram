@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { buildC4ReceiveArgs, classifyC4Rejection, GENERIC_REJECT_REPLY, sendToC4 } from '../src/lib/c4.js';
+import { buildC4ReceiveArgs, classifyC4Rejection, GENERIC_REJECT_REPLY, sendToC4, UNCERTAIN_REPLY } from '../src/lib/c4.js';
 
 // Isolated deployment: temp HOME and ZYLOS_DIR with a fake c4-receive.js that
 // records its argv and replays scripted responses.
@@ -63,10 +63,11 @@ describe('c4-receive argument construction', () => {
 });
 
 describe('rejection classification', () => {
-  it('treats only a non-empty persisted list as committed', () => {
+  it('separates committed, not stored, and uncertain', () => {
     expect(classifyC4Rejection({ ok: false, error: { persisted: ['D1'] } })).toBe('committed');
-    for (const persisted of [[], null, undefined]) {
-      expect(classifyC4Rejection({ ok: false, error: { persisted } })).toBe('rejected');
+    expect(classifyC4Rejection({ ok: false, error: { persisted: [] } })).toBe('not_stored');
+    for (const persisted of [null, undefined]) {
+      expect(classifyC4Rejection({ ok: false, error: { persisted } })).toBe('uncertain');
     }
   });
 });
@@ -107,13 +108,13 @@ describe('sendToC4', () => {
     expect(r.replies).toEqual([null]);
   });
 
-  it('gives only the generic notice after two unstructured failures', async () => {
+  it('gives only the may-not-have-arrived notice after two unstructured failures', async () => {
     writeOptions(SG);
     script({ exit: 2, stdout: 'crash at /some/path/c4-receive.js' }, { exit: 2, stdout: 'crash again' });
     const r = await send();
     expect(r.outcome).toBe('failed');
     expect(r.calls).toHaveLength(2);
-    expect(r.replies).toEqual([GENERIC_REJECT_REPLY]);
+    expect(r.replies).toEqual([UNCERTAIN_REPLY]);
   });
 
   it('treats an error without a message as unstructured and retries', async () => {
@@ -134,11 +135,13 @@ describe('sendToC4', () => {
     expect(r.calls[1].slice(-2)).toEqual(['--session-group', 'group-100777:topic-9']);
   });
 
-  it('never forwards Core error text to the user (old Core without persisted)', async () => {
-    script(reject('INTERNAL_ERROR', undefined, 'failed to queue message: SQLITE_BUSY'));
-    const r = await send('8101553026|msg:1');
-    expect(r.replies).toEqual([GENERIC_REJECT_REPLY]);
-  });
+  it.each([[null], [undefined]])(
+    'persisted %j: says the message may not have arrived, never Core text', async persisted => {
+      script(reject('INTERNAL_ERROR', persisted, 'failed to queue message: SQLITE_BUSY'));
+      const r = await send('8101553026|msg:1');
+      expect(r.calls).toHaveLength(1);
+      expect(r.replies).toEqual([UNCERTAIN_REPLY]);
+    });
 
   it('retries an unstructured failure once with the same group', async () => {
     writeOptions(SG);

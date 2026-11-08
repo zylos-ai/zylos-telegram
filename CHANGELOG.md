@@ -15,8 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/session-group.js <endpoint>` prints the session group for a reply endpoint.
 
 ### Fixed
-- Core rejection text is no longer sent to Telegram users: they get a generic
-  notice and the raw text is logged. Messages Core reports as already stored get
+- Core rejection text is no longer sent to Telegram users: the raw text is
+  logged, and the user gets "try again later" when nothing was stored or a
+  "may not have reached me, resend if no reply" notice when Core cannot say. Messages Core reports as already stored get
   no reply and are not resent; the typing indicator and 👀 reaction are cleared.
 
 ## [0.4.1] - 2026-07-10
