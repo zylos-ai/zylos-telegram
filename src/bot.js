@@ -5,7 +5,7 @@
 
 import { Telegraf } from 'telegraf';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { exec, execFile } from 'child_process';
+import { execFile } from 'child_process';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -14,6 +14,8 @@ import { fileURLToPath } from 'url';
 
 import { loadConfig, getEnv, DATA_DIR } from './lib/config.js';
 import { getHistoryKey } from './lib/utils.js';
+import { endpointFromCtx } from './lib/endpoint.js';
+import { sendToC4 } from './lib/c4.js';
 import {
   hasOwner, bindOwner, isDmAllowed, isOwner,
   isGroupAllowed, isSmartGroup, isSenderAllowed,
@@ -56,7 +58,6 @@ if (proxyUrl) {
 
 const bot = new Telegraf(botToken, botOptions);
 
-const C4_RECEIVE = path.join(process.env.HOME, 'zylos/.claude/skills/comm-bridge/scripts/c4-receive.js');
 const TRANSCRIBE_SCRIPT = path.join(process.env.HOME, 'zylos/bin/transcribe');
 const VOICE_ENABLED = fs.existsSync(TRANSCRIBE_SCRIPT);
 if (!VOICE_ENABLED) {
@@ -89,19 +90,6 @@ loadUserCache();
 const cachePersistInterval = startPersistInterval();
 
 /**
- * Parse c4-receive JSON response from stdout.
- * Returns parsed object or null if parsing fails.
- */
-function parseC4Response(stdout) {
-  if (!stdout) return null;
-  try {
-    return JSON.parse(stdout.trim());
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Remove eyes reaction from a message (with retry on failure).
  */
 function clearReaction(chatId, messageId) {
@@ -118,55 +106,6 @@ function clearReaction(chatId, messageId) {
         reaction: []
       }).catch(() => {});
     }, 500);
-  });
-}
-
-/**
- * Send message to Claude via C4
- * @param {string} source - Channel name
- * @param {string} endpoint - Endpoint ID
- * @param {string} content - Message content
- * @param {function} [onReject] - Callback with error message when c4-receive rejects
- */
-function sendToC4(source, endpoint, content, onReject) {
-  if (!content) {
-    console.error('[telegram] sendToC4 called with empty content');
-    return;
-  }
-  const safeContent = content.replace(/'/g, "'\\''");
-
-  const cmd = `node "${C4_RECEIVE}" --channel "${source}" --endpoint "${endpoint}" --json --content '${safeContent}'`;
-
-  exec(cmd, { encoding: 'utf8', timeout: 30000 }, (error, stdout) => {
-    if (!error) {
-      console.log(`[telegram] Sent to C4: ${content.substring(0, 50)}...`);
-      return;
-    }
-    // Non-zero exit - check if c4-receive returned a structured rejection
-    const response = parseC4Response(stdout);
-    if (response && response.ok === false && response.error?.message) {
-      console.warn(`[telegram] C4 rejected (${response.error.code}): ${response.error.message}`);
-      if (onReject) onReject(response.error.message);
-      return;
-    }
-    // Unexpected failure (node crash, etc.) - retry once
-    console.warn(`[telegram] C4 send failed, retrying in 2s: ${error.message}`);
-    setTimeout(() => {
-      exec(cmd, { encoding: 'utf8', timeout: 30000 }, (retryError, retryStdout) => {
-        if (!retryError) {
-          console.log(`[telegram] Sent to C4 (retry): ${content.substring(0, 50)}...`);
-          return;
-        }
-        const retryResponse = parseC4Response(retryStdout);
-        if (retryResponse && retryResponse.ok === false && retryResponse.error?.message) {
-          console.error(`[telegram] C4 rejected after retry (${retryResponse.error.code}): ${retryResponse.error.message}`);
-          if (onReject) onReject(retryResponse.error.message);
-        } else {
-          console.error(`[telegram] C4 send failed after retry: ${retryError.message}`);
-          if (onReject) onReject('Internal error, please try again.');
-        }
-      });
-    }, 2000);
   });
 }
 
@@ -352,24 +291,6 @@ function getReplyToContext(ctx) {
 }
 
 /**
- * Build structured endpoint string for C4.
- *
- * @param {string|number} chatId
- * @param {object} [opts]
- * @param {number} [opts.messageId] - Trigger message ID
- * @param {number|string} [opts.threadId] - Topic thread ID
- * @returns {string} e.g. "12345|msg:67890|req:12345:67890|thread:111"
- */
-function buildEndpoint(chatId, { messageId, threadId } = {}) {
-  let endpoint = String(chatId);
-  const correlationId = messageId ? `${chatId}:${messageId}` : null;
-  if (messageId) endpoint += `|msg:${messageId}`;
-  if (correlationId) endpoint += `|req:${correlationId}`;
-  if (threadId) endpoint += `|thread:${threadId}`;
-  return endpoint;
-}
-
-/**
  * Notify owner about pending group approval
  */
 function notifyOwnerPendingGroup(chatId, chatTitle, addedBy) {
@@ -507,7 +428,7 @@ bot.on('text', (ctx) => {
 
     logAndRecord(chatId, logEntry, config);
     const quotedContent = getReplyToContext(ctx);
-    const endpoint = buildEndpoint(chatId, { messageId });
+    const endpoint = endpointFromCtx(ctx, { withThread: false });
     const correlationId = `${chatId}:${messageId}`;
     bot.telegram.callApi('setMessageReaction', {
       chat_id: chatId,
@@ -526,7 +447,7 @@ bot.on('text', (ctx) => {
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
       clearReaction(chatId, messageId);
-      bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+      if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
     });
     return;
   }
@@ -584,7 +505,7 @@ bot.on('text', (ctx) => {
 
     const cleanText = mentioned ? replaceBotMention(ctx) : ctx.message.text;
 
-    const endpoint = buildEndpoint(chatId, { messageId, threadId });
+    const endpoint = endpointFromCtx(ctx);
     const correlationId = `${chatId}:${messageId}`;
     const smartNoMention = isSmart && !mentioned;
 
@@ -613,7 +534,7 @@ bot.on('text', (ctx) => {
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
       clearReaction(chatId, messageId);
-      bot.telegram.sendMessage(chatId, errMsg, sendReplyOpts).catch(() => {});
+      if (errMsg) bot.telegram.sendMessage(chatId, errMsg, sendReplyOpts).catch(() => {});
     });
   }
 });
@@ -658,7 +579,7 @@ bot.on('photo', async (ctx) => {
 
     try {
       const localPath = await downloadPhoto(ctx);
-      const endpoint = buildEndpoint(chatId, { messageId, threadId });
+      const endpoint = endpointFromCtx(ctx);
       const correlationId = `${chatId}:${messageId}`;
       bot.telegram.callApi('setMessageReaction', {
         chat_id: chatId,
@@ -678,7 +599,7 @@ bot.on('photo', async (ctx) => {
       sendToC4('telegram', endpoint, msg, (errMsg) => {
         stopTypingIndicator(correlationId);
         clearReaction(chatId, messageId);
-        bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+        if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
     } catch (err) {
       console.error(`[telegram] Photo download error: ${err.message}`);
@@ -723,7 +644,7 @@ bot.on('photo', async (ctx) => {
     }
     try {
       const localPath = await downloadPhoto(ctx);
-      const endpoint = buildEndpoint(chatId, { messageId, threadId });
+      const endpoint = endpointFromCtx(ctx);
       const correlationId = `${chatId}:${messageId}`;
       bot.telegram.callApi('setMessageReaction', {
         chat_id: chatId,
@@ -745,7 +666,7 @@ bot.on('photo', async (ctx) => {
       sendToC4('telegram', endpoint, msg, (errMsg) => {
         stopTypingIndicator(correlationId);
         clearReaction(chatId, messageId);
-        bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+        if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
     } catch (err) {
       console.error(`[telegram] Photo download error: ${err.message}`);
@@ -758,7 +679,7 @@ bot.on('photo', async (ctx) => {
   if (isSmart) {
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
 
-    const endpoint = buildEndpoint(chatId, { messageId, threadId });
+    const endpoint = endpointFromCtx(ctx);
     const correlationId = `${chatId}:${messageId}`;
 
     const msg = formatMessage({
@@ -775,7 +696,7 @@ bot.on('photo', async (ctx) => {
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
       clearReaction(chatId, messageId);
-      bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+      if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
     });
     return;
   }
@@ -824,7 +745,7 @@ bot.on('document', async (ctx) => {
 
     try {
       const localPath = await downloadDocument(ctx);
-      const endpoint = buildEndpoint(chatId, { messageId, threadId });
+      const endpoint = endpointFromCtx(ctx);
       const correlationId = `${chatId}:${messageId}`;
       bot.telegram.callApi('setMessageReaction', {
         chat_id: chatId,
@@ -844,7 +765,7 @@ bot.on('document', async (ctx) => {
       sendToC4('telegram', endpoint, msg, (errMsg) => {
         stopTypingIndicator(correlationId);
         clearReaction(chatId, messageId);
-        bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+        if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
     } catch (err) {
       console.error(`[telegram] Document download error: ${err.message}`);
@@ -889,7 +810,7 @@ bot.on('document', async (ctx) => {
     }
     try {
       const localPath = await downloadDocument(ctx);
-      const endpoint = buildEndpoint(chatId, { messageId, threadId });
+      const endpoint = endpointFromCtx(ctx);
       const correlationId = `${chatId}:${messageId}`;
       bot.telegram.callApi('setMessageReaction', {
         chat_id: chatId,
@@ -911,7 +832,7 @@ bot.on('document', async (ctx) => {
       sendToC4('telegram', endpoint, msg, (errMsg) => {
         stopTypingIndicator(correlationId);
         clearReaction(chatId, messageId);
-        bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+        if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
       });
     } catch (err) {
       console.error(`[telegram] Document download error: ${err.message}`);
@@ -924,7 +845,7 @@ bot.on('document', async (ctx) => {
   if (isSmart) {
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
 
-    const endpoint = buildEndpoint(chatId, { messageId, threadId });
+    const endpoint = endpointFromCtx(ctx);
     const correlationId = `${chatId}:${messageId}`;
 
     const msg = formatMessage({
@@ -941,7 +862,7 @@ bot.on('document', async (ctx) => {
     sendToC4('telegram', endpoint, msg, (errMsg) => {
       stopTypingIndicator(correlationId);
       clearReaction(chatId, messageId);
-      bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+      if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
     });
     return;
   }
@@ -1017,7 +938,7 @@ bot.on('voice', async (ctx) => {
     clearReaction(chatId, messageId);
     console.log(`[telegram] Voice transcribed: "${transcript.substring(0, 60)}"`);
 
-    const endpoint = buildEndpoint(chatId, { messageId, threadId });
+    const endpoint = endpointFromCtx(ctx);
     const msg = formatMessage({
       chatType: 'private',
       userName,
@@ -1027,7 +948,7 @@ bot.on('voice', async (ctx) => {
       isThread: !!threadId
     });
     sendToC4('telegram', endpoint, msg, (errMsg) => {
-      bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+      if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
     });
     return;
   }
@@ -1097,7 +1018,7 @@ bot.on('voice', async (ctx) => {
   clearReaction(chatId, messageId);
   console.log(`[telegram] Group voice transcribed: "${transcript.substring(0, 60)}"`);
 
-  const endpoint = buildEndpoint(chatId, { messageId, threadId });
+  const endpoint = endpointFromCtx(ctx);
   const correlationId = `${chatId}:${messageId}`;
   const msg = formatMessage({
     chatType,
@@ -1113,7 +1034,7 @@ bot.on('voice', async (ctx) => {
   sendToC4('telegram', endpoint, msg, (errMsg) => {
     stopTypingIndicator(correlationId);
     clearReaction(chatId, messageId);
-    bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
   });
 });
 
