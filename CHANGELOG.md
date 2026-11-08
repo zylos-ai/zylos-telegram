@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-09
+
 ### Added
 - Multi-session support: inbound messages carry a session group (`dm-<id>`,
   `group<id>`, `group<id>:topic-<id>` for forum topics), passed only when the
