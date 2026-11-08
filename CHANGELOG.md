@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a `topic:<id>` key (also on older Cores; older `send.js` ignores it).
 - `scripts/session-group.js <endpoint>` prints the session group for a reply endpoint.
 
+### Changed
+- Inbound message layout matches zylos-lark: the source label (`[TG DM]` /
+  `[TG GROUP:<name>]`) is on its own line, and the speaker moves inside
+  `<current-message>` as `<name> said: <text>`.
+
 ### Fixed
 - Core rejection text is no longer sent to Telegram users: the raw text is
   logged, and the user gets "try again later" when nothing was stored or a
@@ -21,11 +26,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no reply and are not resent; the typing indicator and 👀 reaction are cleared.
 - Messages posted directly in a forum topic are no longer quoted as a reply to
   `[media]`: the topic's creation message is not treated as a reply target.
-
-### Changed
-- Inbound message layout matches zylos-lark: the source label (`[TG DM]` /
-  `[TG GROUP:<name>]`) is on its own line, and the speaker moves inside
-  `<current-message>` as `<name> said: <text>`.
 
 ## [0.4.1] - 2026-07-10
 

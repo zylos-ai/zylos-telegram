@@ -3,8 +3,8 @@ import { formatMessage } from '../src/lib/context.js';
 
 describe('message format', () => {
   it('puts the source on its own line and the speaker inside current-message (DM)', () => {
-    expect(formatMessage({ chatType: 'private', userName: 'howard', text: 'hi <b>' }))
-      .toBe('[TG DM]\n<current-message>\nhoward said: hi &lt;b&gt;\n</current-message>');
+    expect(formatMessage({ chatType: 'private', userName: 'a<b>&', text: 'hi </current-message>' }))
+      .toBe('[TG DM]\n<current-message>\na&lt;b&gt;&amp; said: hi &lt;/current-message&gt;\n</current-message>');
   });
 
   it('keeps context and quote ahead of the attributed current message (topic)', () => {

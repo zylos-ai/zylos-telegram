@@ -14,7 +14,7 @@ import { fileURLToPath } from 'url';
 
 import { loadConfig, getEnv, DATA_DIR } from './lib/config.js';
 import { getHistoryKey } from './lib/utils.js';
-import { getReplyTarget } from './lib/reply.js';
+import { getReplyToContext } from './lib/reply.js';
 import { endpointFromCtx } from './lib/endpoint.js';
 import { sendToC4 } from './lib/c4.js';
 import {
@@ -276,22 +276,6 @@ try {
 } catch {}
 
 /**
- * Extract reply-to context from ctx.message.reply_to_message.
- * No API call needed - Telegram delivers it in the update payload.
- *
- * @param {object} ctx
- * @returns {{ sender: string, text: string }|null}
- */
-function getReplyToContext(ctx) {
-  const reply = getReplyTarget(ctx.message);
-  if (!reply) return null;
-  return {
-    sender: reply.from?.username || reply.from?.first_name || 'unknown',
-    text: reply.text || reply.caption || '[media]'
-  };
-}
-
-/**
  * Notify owner about pending group approval
  */
 function notifyOwnerPendingGroup(chatId, chatTitle, addedBy) {
@@ -428,7 +412,7 @@ bot.on('text', (ctx) => {
     }
 
     logAndRecord(chatId, logEntry, config);
-    const quotedContent = getReplyToContext(ctx);
+    const quotedContent = getReplyToContext(ctx.message);
     const endpoint = endpointFromCtx(ctx, { withThread: false });
     const correlationId = `${chatId}:${messageId}`;
     bot.telegram.callApi('setMessageReaction', {
@@ -501,7 +485,7 @@ bot.on('text', (ctx) => {
 
     const historyKey = getHistoryKey(chatId, threadId);
     const contextMessages = getHistory(historyKey, messageId, config);
-    const quotedContent = getReplyToContext(ctx);
+    const quotedContent = getReplyToContext(ctx.message);
     const groupName = getGroupName(config, chatId, ctx.chat.title);
 
     const cleanText = mentioned ? replaceBotMention(ctx) : ctx.message.text;
@@ -593,7 +577,7 @@ bot.on('photo', async (ctx) => {
         chatType: 'private',
         userName,
         text: caption,
-        quotedContent: getReplyToContext(ctx),
+        quotedContent: getReplyToContext(ctx.message),
         mediaPath: localPath,
         isThread: !!threadId
       });
@@ -660,7 +644,7 @@ bot.on('photo', async (ctx) => {
         userName,
         text: caption ? replaceBotMention(ctx) : '[sent a photo]',
         contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
-        quotedContent: getReplyToContext(ctx),
+        quotedContent: getReplyToContext(ctx.message),
         mediaPath: localPath,
         isThread: !!threadId
       });
@@ -689,7 +673,7 @@ bot.on('photo', async (ctx) => {
       userName,
       text: caption ? `${caption}\n${photoInfo}` : `[sent a photo]\n${photoInfo}`,
       contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
-      quotedContent: getReplyToContext(ctx),
+      quotedContent: getReplyToContext(ctx.message),
       mediaPath: null,
       isThread: !!threadId,
       smartHint: true
@@ -759,7 +743,7 @@ bot.on('document', async (ctx) => {
         chatType: 'private',
         userName,
         text: caption,
-        quotedContent: getReplyToContext(ctx),
+        quotedContent: getReplyToContext(ctx.message),
         mediaPath: localPath,
         isThread: !!threadId
       });
@@ -826,7 +810,7 @@ bot.on('document', async (ctx) => {
         userName,
         text: caption ? replaceBotMention(ctx) : `[sent a file: ${fileName}]`,
         contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
-        quotedContent: getReplyToContext(ctx),
+        quotedContent: getReplyToContext(ctx.message),
         mediaPath: localPath,
         isThread: !!threadId
       });
@@ -855,7 +839,7 @@ bot.on('document', async (ctx) => {
       userName,
       text: caption ? `${caption}\n${fileInfo}` : `[sent a file: ${fileName}]\n${fileInfo}`,
       contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
-      quotedContent: getReplyToContext(ctx),
+      quotedContent: getReplyToContext(ctx.message),
       mediaPath: null,
       isThread: !!threadId,
       smartHint: true
@@ -944,7 +928,7 @@ bot.on('voice', async (ctx) => {
       chatType: 'private',
       userName,
       text: `[Voice] ${transcript}`,
-      quotedContent: getReplyToContext(ctx),
+      quotedContent: getReplyToContext(ctx.message),
       mediaPath: null,
       isThread: !!threadId
     });
@@ -1027,7 +1011,7 @@ bot.on('voice', async (ctx) => {
     userName,
     text: `[Voice] ${transcript}`,
     contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
-    quotedContent: getReplyToContext(ctx),
+    quotedContent: getReplyToContext(ctx.message),
     mediaPath: null,
     isThread: !!threadId,
     smartHint: false

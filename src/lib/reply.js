@@ -18,3 +18,18 @@ export function getReplyTarget(msg) {
   if (msg.is_topic_message && reply.message_id === msg.message_thread_id) return null;
   return reply;
 }
+
+/**
+ * Quoted reply context for the agent. No API call needed: Telegram delivers
+ * the replied-to message in the update payload.
+ * @param {object} msg - Telegram message
+ * @returns {{ sender: string, text: string }|null}
+ */
+export function getReplyToContext(msg) {
+  const reply = getReplyTarget(msg);
+  if (!reply) return null;
+  return {
+    sender: reply.from?.username || reply.from?.first_name || 'unknown',
+    text: reply.text || reply.caption || '[media]'
+  };
+}
