@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   logged, and the user gets "try again later" when nothing was stored or a
   "may not have reached me, resend if no reply" notice when Core cannot say. Messages Core reports as already stored get
   no reply and are not resent; the typing indicator and 👀 reaction are cleared.
+- Messages posted directly in a forum topic are no longer quoted as a reply to
+  `[media]`: the topic's creation message is not treated as a reply target.
+
+### Changed
+- Inbound message layout matches zylos-lark: the source label (`[TG DM]` /
+  `[TG GROUP:<name>]`) is on its own line, and the speaker moves inside
+  `<current-message>` as `<name> said: <text>`.
 
 ## [0.4.1] - 2026-07-10
 

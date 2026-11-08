@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 
 import { loadConfig, getEnv, DATA_DIR } from './lib/config.js';
 import { getHistoryKey } from './lib/utils.js';
+import { getReplyTarget } from './lib/reply.js';
 import { endpointFromCtx } from './lib/endpoint.js';
 import { sendToC4 } from './lib/c4.js';
 import {
@@ -282,8 +283,8 @@ try {
  * @returns {{ sender: string, text: string }|null}
  */
 function getReplyToContext(ctx) {
-  if (!ctx.message.reply_to_message) return null;
-  const reply = ctx.message.reply_to_message;
+  const reply = getReplyTarget(ctx.message);
+  if (!reply) return null;
   return {
     sender: reply.from?.username || reply.from?.first_name || 'unknown',
     text: reply.text || reply.caption || '[media]'
