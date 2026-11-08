@@ -40,6 +40,8 @@ describe('forum topic detection', () => {
     expect(getForumTopicId(ctx({ is_forum: true }, { is_topic_message: true, message_thread_id: 42 }))).toBe(42);
     // forum General area
     expect(getForumTopicId(ctx({ is_forum: true }, { message_id: 1 }))).toBeNull();
+    // forum message with a thread id but no topic marker (e.g. a reply in General)
+    expect(getForumTopicId(ctx({ is_forum: true }, { message_thread_id: 7 }))).toBeNull();
     // reply chain in a non-forum supergroup
     expect(getForumTopicId(ctx({ is_forum: false }, { message_thread_id: 3 }))).toBeNull();
     expect(getForumTopicId(ctx({}, { is_topic_message: true, message_thread_id: 3 }))).toBeNull();

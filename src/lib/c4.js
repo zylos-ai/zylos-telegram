@@ -65,7 +65,9 @@ export function parseC4Response(stdout) {
  * @param {string} source - Channel name
  * @param {string} endpoint - Endpoint ID
  * @param {string} content - Message content
- * @param {function} [onReject] - Callback with a user-facing notice when the message was not taken
+ * @param {function} [onReject] - Called once when the agent will not answer this message:
+ *   with a user-facing notice to send, or with null when Core already committed
+ *   the inbound row (clean up typing/reaction only, send nothing)
  * @param {object} [opts]
  * @param {number} [opts.retryDelayMs=2000]
  * @param {function} [opts.onDone] - Test hook: called with the final outcome
@@ -87,6 +89,7 @@ export function sendToC4(source, endpoint, content, onReject, { retryDelayMs = 2
     const { code, message } = response.error;
     if (classifyC4Rejection(response) === 'committed') {
       console.warn(`[telegram] C4 ${label} after commit (${code}), not resending: ${message}`);
+      if (onReject) onReject(null);
       return done('committed');
     }
     console.warn(`[telegram] C4 ${label} (${code}) [group=${sessionGroup}]: ${message}`);
@@ -100,7 +103,7 @@ export function sendToC4(source, endpoint, content, onReject, { retryDelayMs = 2
       return done('sent');
     }
     const response = parseC4Response(stdout);
-    if (response && response.ok === false && response.error) return handleRejection(response, 'rejected');
+    if (response && response.ok === false && response.error?.message) return handleRejection(response, 'rejected');
     // Unexpected failure (node crash, etc.) - retry once
     console.warn(`[telegram] C4 send failed, retrying in ${retryDelayMs}ms: ${error.message}`);
     setTimeout(() => {
@@ -110,7 +113,7 @@ export function sendToC4(source, endpoint, content, onReject, { retryDelayMs = 2
           return done('sent');
         }
         const retryResponse = parseC4Response(retryStdout);
-        if (retryResponse && retryResponse.ok === false && retryResponse.error) {
+        if (retryResponse && retryResponse.ok === false && retryResponse.error?.message) {
           return handleRejection(retryResponse, 'rejected after retry');
         }
         console.error(`[telegram] C4 send failed after retry: ${retryError.message}`);

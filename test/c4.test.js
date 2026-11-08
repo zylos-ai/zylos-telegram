@@ -25,6 +25,7 @@ fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2)
 const list = JSON.parse(fs.readFileSync(${JSON.stringify(responses)}, 'utf8'));
 const r = list.length > 1 ? list.shift() : list[0];
 fs.writeFileSync(${JSON.stringify(responses)}, JSON.stringify(list));
+if (r.options) fs.writeFileSync(${JSON.stringify(path.join(scriptsDir, 'c4-receive-options.json'))}, JSON.stringify({ options: r.options }));
 if (r.stdout) process.stdout.write(r.stdout);
 process.exit(r.exit);
 `);
@@ -96,13 +97,41 @@ describe('sendToC4', () => {
       expect(r.replies).toEqual([GENERIC_REJECT_REPLY]);
     });
 
-  it('stays silent and does not resend when the inbound was already committed', async () => {
+  it('sends nothing and does not resend when the inbound was already committed', async () => {
     writeOptions(SG);
     script(reject('UNHEALTHY_NOTIFY_FAILED', ['D1'], 'Inbound committed; status notice failed. Do not resend.'));
     const r = await send();
     expect(r.outcome).toBe('committed');
     expect(r.calls).toHaveLength(1);
+    // callback fires once with no notice, so the caller clears typing and the reaction
+    expect(r.replies).toEqual([null]);
+  });
+
+  it('gives only the generic notice after two unstructured failures', async () => {
+    writeOptions(SG);
+    script({ exit: 2, stdout: 'crash at /some/path/c4-receive.js' }, { exit: 2, stdout: 'crash again' });
+    const r = await send();
+    expect(r.outcome).toBe('failed');
+    expect(r.calls).toHaveLength(2);
+    expect(r.replies).toEqual([GENERIC_REJECT_REPLY]);
+  });
+
+  it('treats an error without a message as unstructured and retries', async () => {
+    writeOptions(SG);
+    script({ exit: 1, stdout: JSON.stringify({ ok: false, error: { code: 'X' } }) }, { exit: 0, stdout: '{"ok":true}' });
+    const r = await send();
+    expect(r.outcome).toBe('sent');
+    expect(r.calls).toHaveLength(2);
     expect(r.replies).toEqual([]);
+  });
+
+  it('rereads the options file before the retry', async () => {
+    // old Core on the first call; Core upgraded between the failure and the retry
+    script({ exit: 2, stdout: 'crash', options: SG }, { exit: 0, stdout: '{"ok":true}' });
+    const r = await send();
+    expect(r.outcome).toBe('sent');
+    expect(r.calls[0]).not.toContain('--session-group');
+    expect(r.calls[1].slice(-2)).toEqual(['--session-group', 'group-100777:topic-9']);
   });
 
   it('never forwards Core error text to the user (old Core without persisted)', async () => {

@@ -11,13 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-session support: inbound messages carry a session group (`dm-<id>`,
   `group<id>`, `group<id>:topic-<id>` for forum topics), passed only when the
   installed Core lists `--session-group`. Endpoints of forum-topic messages gain
-  a `topic:<id>` key.
+  a `topic:<id>` key (also on older Cores; older `send.js` ignores it).
 - `scripts/session-group.js <endpoint>` prints the session group for a reply endpoint.
 
 ### Fixed
 - Core rejection text is no longer sent to Telegram users: they get a generic
   notice and the raw text is logged. Messages Core reports as already stored get
-  no reply and are not resent.
+  no reply and are not resent; the typing indicator and 👀 reaction are cleared.
 
 ## [0.4.1] - 2026-07-10
 
