@@ -19,7 +19,10 @@ beforeEach(async () => {
   fs.writeFileSync(path.join(bin, 'curl'), `#!/usr/bin/env node
 import fs from 'node:fs';
 fs.appendFileSync(process.env.TG_TEST_CURL_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');
-if (process.env.TG_TEST_REPLY_400 === '1' && process.argv.some(a => /\\/send(Message|Photo|Document)$/.test(a))) {
+const jsonIndex = process.argv.indexOf('-d');
+const hasReply = jsonIndex >= 0 && JSON.parse(process.argv[jsonIndex + 1]).reply_to_message_id;
+if ((process.env.TG_TEST_REPLY_400 === '1' || (process.env.TG_TEST_REPLY_400 === 'with-reply' && hasReply)) &&
+    process.argv.some(a => /\\/send(Message|Photo|Document)$/.test(a))) {
   process.stdout.write('{"ok":false,"error_code":400,"description":"reply message not found"}\\n400');
   process.exit(0);
 }
@@ -149,6 +152,35 @@ describe('real send CLI policy boundary with fake Telegram transport', () => {
       message: { message_id: 7, message_thread_id: dm ? undefined : 9 } };
     return authorizeInboundReply(cfg, ctx, endpointFromCtx(ctx), 'fixture-token', { ownerMention: true, now });
   }
+
+  function signedOwnerDm() {
+    const ctx = { from: { id: 123 }, chat: { id: 123, type: 'private' }, message: { message_id: 7 } };
+    return authorizeInboundReply(cfg, ctx, endpointFromCtx(ctx), 'fixture-token');
+  }
+
+  it('keeps normal chunk routing for a signed owner DM already allowed by policy', async () => {
+    const endpoint = signedOwnerDm();
+    expect(endpoint).toContain('|reply-auth:');
+    expect((await runSend(endpoint, 'x'.repeat(4100))).code).toBe(0);
+    const sends = calls().filter(args => args.some(a => a.endsWith('/sendMessage')));
+    expect(sends).toHaveLength(2);
+    expect(JSON.parse(sends[0].at(-1))).toMatchObject({ chat_id: '123', reply_to_message_id: 7 });
+    expect(JSON.parse(sends[1].at(-1))).toMatchObject({ chat_id: '123' });
+    expect(JSON.parse(sends[1].at(-1))).not.toHaveProperty('reply_to_message_id');
+  });
+
+  it('keeps normal 400 reply fallback for a signed owner DM already allowed by policy', async () => {
+    const endpoint = signedOwnerDm();
+    expect(endpoint).toContain('|reply-auth:');
+    const result = await runSend(endpoint, 'hello', JSON.stringify(cfg), { TG_TEST_REPLY_400: 'with-reply' });
+    expect(result.code).toBe(0);
+    const sends = calls().filter(args => args.some(a => a.endsWith('/sendMessage')));
+    expect(sends).toHaveLength(2);
+    expect(JSON.parse(sends[0].at(-1))).toMatchObject({ chat_id: '123', reply_to_message_id: 7 });
+    expect(JSON.parse(sends[1].at(-1))).toMatchObject({ chat_id: '123', text: 'hello' });
+    expect(JSON.parse(sends[1].at(-1))).not.toHaveProperty('reply_to_message_id');
+    expect(records).toHaveLength(1);
+  });
 
   it('replies to the owner in an unlisted group, binding every chunk to the trigger', async () => {
     const result = await runSend(replyEndpoint(), 'x'.repeat(4100));

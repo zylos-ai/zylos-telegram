@@ -204,6 +204,13 @@ cannot use this exception; the sender must trigger a new inbound message.
 
 Per-group options: `mode` (mention/smart), `allowFrom` (restrict senders), `historyLimit`.
 
+Policy values are case-sensitive. Hand-edited invalid values can still be accepted
+by legacy inbound handling. An invalid `dmPolicy` blocks outbound DMs except
+authenticated owner DM replies; an invalid `groupPolicy` blocks outbound group
+sends. Correct the configuration
+with `admin.js set-dm-policy <open|allowlist|owner>` or
+`admin.js set-group-policy <open|allowlist|disabled>`; use lowercase values.
+
 ### Group join behavior (on bot invite)
 
 The bot branches on who invited it:

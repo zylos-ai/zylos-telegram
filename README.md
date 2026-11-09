@@ -79,6 +79,12 @@ This preserves owner replies in unlisted groups and replies to username-allowed
 DMs without allowing proactive sends to those destinations. Keep the full reply
 endpoint unchanged. Group replies are visible to everyone in the group.
 
+Policy values are case-sensitive. Invalid hand-edited values may still accept
+inbound messages. An invalid `dmPolicy` blocks outbound DMs except authenticated
+owner DM replies; an invalid `groupPolicy` blocks outbound group sends.
+Fix them with `admin.js set-dm-policy <open|allowlist|owner>` or
+`admin.js set-group-policy <open|allowlist|disabled>`.
+
 ## Documentation
 
 - [SKILL.md](./SKILL.md) — Component specification
