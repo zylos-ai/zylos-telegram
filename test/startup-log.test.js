@@ -5,8 +5,9 @@ import path from 'node:path';
 
 // Load the real bot entry point with Telegram, HTTP and config replaced, with
 // HOME, ZYLOS_DIR and the data directory in a temp dir, and capture what it
-// logs once launch succeeds.
-const state = vi.hoisted(() => ({ dir: '' }));
+// logs once launch succeeds. Its SIGTERM handler is kept and run afterwards
+// so the bot's own shutdown closes its watcher, intervals and server.
+const state = vi.hoisted(() => ({ dir: '', signals: {} }));
 vi.mock('../src/lib/config.js', () => ({
   loadConfig: () => ({ owner: {}, groups: {} }), saveConfig: vi.fn(() => true),
   getEnv: name => name === 'TELEGRAM_BOT_TOKEN' ? 'fixture-token' : '',
@@ -32,12 +33,13 @@ beforeAll(async () => {
   state.dir = path.join(root, 'data');
   fs.mkdirSync(state.dir, { recursive: true });
   vi.useFakeTimers();
-  vi.spyOn(process, 'once').mockImplementation(() => process);
+  vi.spyOn(process, 'once').mockImplementation((signal, handler) => { state.signals[signal] = handler; return process; });
   log = vi.spyOn(console, 'log');
   await import('../src/bot.js');
   await vi.waitFor(() => expect(log.mock.calls.some(([line]) => String(line).endsWith(' started'))).toBe(true));
 });
 afterAll(() => {
+  state.signals.SIGTERM();
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.restoreAllMocks();
