@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Enforce DM and group destination policies before outbound text, media, SKIP,
+  or reaction API calls (#78).
+
+### Changed
+- Outbound destinations must be canonical numeric Telegram chat IDs. Under DM
+  allowlist policy, username-only entries (including legacy whitelist usernames)
+  cannot authorize replies; add the user's numeric DM ID. Username and @channel
+  destinations are rejected. Group replies require the destination to be allowed
+  by groupPolicy, including replies to owner mentions in unlisted groups.
+- DM allowlist admin commands warn when entries cannot authorize outbound replies.
+
 ## [0.5.0] - 2026-11-09
 
 ### Added

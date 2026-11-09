@@ -190,6 +190,9 @@ const commands = {
       if (legacyIds.length) console.log(`  chat_ids: ${legacyIds.join(', ')}`);
       if (legacyUsers.length) console.log(`  usernames: ${legacyUsers.join(', ')}`);
     }
+    if (allowFrom.some(value => !/^[1-9]\d*$/.test(String(value))) || legacyUsers.length) {
+      console.warn('Warning: username/non-numeric entries cannot authorize outbound replies under allowlist policy. Add each user\'s numeric DM ID with add-dm-allow <numeric_id>.');
+    }
   },
 
   'add-dm-allow': (value) => {
@@ -210,6 +213,9 @@ const commands = {
       console.log(`Added ${value} to dmAllowFrom`);
     } else {
       console.log(`${value} already in dmAllowFrom`);
+    }
+    if (!/^[1-9]\d*$/.test(String(value))) {
+      console.warn('Warning: this entry cannot authorize outbound replies under allowlist policy. Also add the user\'s numeric DM ID with add-dm-allow <numeric_id>.');
     }
     if ((config.dmPolicy || 'owner') !== 'allowlist') {
       console.log(`Note: dmPolicy is "${config.dmPolicy || 'owner'}", set to "allowlist" for this to take effect.`);
