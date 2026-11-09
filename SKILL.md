@@ -177,6 +177,15 @@ DM and group access are controlled by independent policies:
 
 **Group (groupPolicy):** `open` (any group) | `allowlist` (configured groups only) | `disabled` (no groups)
 
+These destination policies also apply to outbound text, images, files, and
+reaction cleanup through `scripts/send.js`. Endpoints must use numeric chat IDs:
+positive for DMs, negative for groups. `owner` permits only the bound owner;
+`allowlist` permits the owner and numeric IDs in `dmAllowFrom` (including legacy
+`whitelist.chat_ids`). Username-only entries cannot authorize an outbound numeric
+destination; add its verified numeric ID. Group allowlists use the `groups` map;
+`allowFrom` controls inbound senders, not outbound destinations. A denied send
+exits nonzero with the blocking policy before making any Telegram API request.
+
 Per-group options: `mode` (mention/smart), `allowFrom` (restrict senders), `historyLimit`.
 
 ### Group join behavior (on bot invite)

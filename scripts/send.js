@@ -13,6 +13,7 @@ import { execFileSync } from 'child_process';
 import dotenv from 'dotenv';
 import { parseEndpoint } from '../src/lib/utils.js';
 import { DATA_DIR, loadConfig } from '../src/lib/config.js';
+import { assertOutboundAllowed } from '../src/lib/auth.js';
 import { redactSecrets } from '../src/lib/redact.js';
 import { markdownToHtml, hasMarkdownContent, stripHtmlTags } from '../src/lib/markdown-html.js';
 import { splitHtmlMessage } from '../src/lib/html-split.js';
@@ -383,6 +384,8 @@ function clearReaction() {
  */
 async function main() {
   try {
+    assertOutboundAllowed(loadConfig(), chatId);
+
     // Smart mode skip — AI decided not to respond
     if (message.trim() === '[SKIP]') {
       clearReaction();

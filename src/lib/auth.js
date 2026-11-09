@@ -87,6 +87,27 @@ export function isDmAllowed(config, ctx) {
   return false;
 }
 
+/** Enforce destination access before any outbound Telegram API request. */
+export function assertOutboundAllowed(config, chatId) {
+  if (typeof chatId !== 'string' || !/^-?[1-9]\d*$/.test(chatId)) {
+    throw new Error('OUTBOUND_INVALID_CHAT_ID: use a positive numeric DM ID or a negative numeric group ID');
+  }
+  if (chatId.startsWith('-')) {
+    const policy = config.groupPolicy || 'allowlist';
+    if (!['open', 'allowlist', 'disabled'].includes(policy) || !isGroupAllowed(config, chatId)) {
+      throw new Error(`OUTBOUND_GROUP_DENIED: groupPolicy=${policy} does not allow destination ${chatId}`);
+    }
+    return;
+  }
+
+  const policy = config.dmPolicy || 'owner';
+  // An outbound endpoint proves only a numeric ID, never a mutable username.
+  const ctx = { from: { id: chatId }, chat: { id: chatId } };
+  if (!['open', 'allowlist', 'owner'].includes(policy) || !isDmAllowed(config, ctx)) {
+    throw new Error(`OUTBOUND_DM_DENIED: dmPolicy=${policy} does not allow destination ${chatId}; configure the owner or an allowed numeric DM ID`);
+  }
+}
+
 // Legacy aliases for backward compatibility
 export function isWhitelisted(config, ctx) { return isDmAllowed(config, ctx); }
 export function isAuthorized(config, ctx) { return isDmAllowed(config, ctx); }
