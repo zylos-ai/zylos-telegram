@@ -63,10 +63,25 @@ export function parseC4Response(stdout) {
 }
 
 /**
+ * True when c4-receive never started (spawn itself failed), so Core cannot
+ * have stored anything. Any other failure without a structured result is an
+ * unknown commit state.
+ */
+function neverStarted(error) {
+  return typeof error.code === 'string'
+    && typeof error.syscall === 'string' && error.syscall.startsWith('spawn');
+}
+
+/**
  * Send message to Claude via C4.
  * The session group is derived from the endpoint and passed only when the
  * installed Core lists --session-group (rechecked on every call, including the retry).
  * A rejected group is never dropped and resent to the overall group.
+ *
+ * c4-receive runs without a timeout: Core may still be storing the message or
+ * sending a status notice after it, and killing it would leave the outcome unknown.
+ * Following Core's contract, an inbound call that is already stored or whose
+ * outcome is unknown is never retried. Only a call that never started is retried once.
  * @param {string} source - Channel name
  * @param {string} endpoint - Endpoint ID
  * @param {string} content - Message content
@@ -87,7 +102,7 @@ export function sendToC4(source, endpoint, content, onReject, { retryDelayMs = 2
 
   const run = cb => execFile(process.execPath,
     [getC4ReceivePath(), ...buildC4ReceiveArgs({ source, endpoint, content, sessionGroup })],
-    { encoding: 'utf8', timeout: 30000 }, cb);
+    { encoding: 'utf8' }, cb);
 
   // Structured rejection: Core's text is written for the agent, so it only goes to the log.
   const handleRejection = (response, label) => {
@@ -103,6 +118,13 @@ export function sendToC4(source, endpoint, content, onReject, { retryDelayMs = 2
     return done('rejected');
   };
 
+  // No structured result from a process that ran: it may have stored the message.
+  const handleUnknown = (error, label) => {
+    console.error(`[telegram] C4 ${label}, outcome unknown, not resending: ${error.message}`);
+    if (onReject) onReject(UNCERTAIN_REPLY);
+    return done('uncertain');
+  };
+
   run((error, stdout) => {
     if (!error) {
       console.log(`[telegram] Sent to C4: ${content.substring(0, 50)}...`);
@@ -110,8 +132,9 @@ export function sendToC4(source, endpoint, content, onReject, { retryDelayMs = 2
     }
     const response = parseC4Response(stdout);
     if (response && response.ok === false && response.error?.message) return handleRejection(response, 'rejected');
-    // Unexpected failure (node crash, etc.) - retry once
-    console.warn(`[telegram] C4 send failed, retrying in ${retryDelayMs}ms: ${error.message}`);
+    if (!neverStarted(error)) return handleUnknown(error, 'send failed');
+    // c4-receive never started, so nothing was stored - retry once
+    console.warn(`[telegram] C4 receive did not start, retrying in ${retryDelayMs}ms: ${error.message}`);
     setTimeout(() => {
       run((retryError, retryStdout) => {
         if (!retryError) {

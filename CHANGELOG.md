@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Never deliver an inbound message to C4 twice. c4-receive now runs without
+  the 30 s timeout, and a call that ran but returned no structured result
+  (killed, crashed, unparseable output) is not retried; the user gets the
+  "may not have reached me" notice instead. Only a call that never started is
+  retried once (#76).
 - Enforce DM and group destination policies before outbound text, media, SKIP,
   or reaction API calls (#78).
 - Preserve replies to accepted inbound username-only DMs and owner text mentions

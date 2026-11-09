@@ -1,8 +1,28 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { buildC4ReceiveArgs, classifyC4Rejection, GENERIC_REJECT_REPLY, sendToC4, UNCERTAIN_REPLY } from '../src/lib/c4.js';
+
+// execFile passes through to the real one. While spawnFailures > 0 it runs a
+// missing executable instead, so Node reports a genuine spawn failure and
+// c4-receive never starts. Every call's options are kept.
+const spawn = vi.hoisted(() => ({ failures: 0, missing: '', onFail: null, calls: [] }));
+vi.mock('node:child_process', async importOriginal => {
+  const real = await importOriginal();
+  return {
+    ...real,
+    execFile: (file, args, opts, cb) => {
+      spawn.calls.push({ args, opts });
+      if (spawn.failures > 0) {
+        spawn.failures--;
+        if (spawn.onFail) spawn.onFail();
+        return real.execFile(spawn.missing, args, opts, cb);
+      }
+      return real.execFile(file, args, opts, cb);
+    },
+  };
+});
 
 // Isolated deployment: temp HOME and ZYLOS_DIR with a fake c4-receive.js that
 // records its argv and replays scripted responses.
@@ -19,15 +39,18 @@ beforeEach(() => {
   fs.mkdirSync(scriptsDir, { recursive: true });
   calls = path.join(root, 'calls.jsonl');
   responses = path.join(root, 'responses.json');
+  Object.assign(spawn, { failures: 0, missing: path.join(root, 'missing-node'), onFail: null, calls: [] });
   fs.writeFileSync(path.join(scriptsDir, 'c4-receive.js'), `
 const fs = require('fs');
 fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2)) + '\\n');
 const list = JSON.parse(fs.readFileSync(${JSON.stringify(responses)}, 'utf8'));
 const r = list.length > 1 ? list.shift() : list[0];
 fs.writeFileSync(${JSON.stringify(responses)}, JSON.stringify(list));
+if (r.signal) process.kill(process.pid, r.signal);
 if (r.options) fs.writeFileSync(${JSON.stringify(path.join(scriptsDir, 'c4-receive-options.json'))}, JSON.stringify({ options: r.options }));
 if (r.stdout) process.stdout.write(r.stdout);
-process.exit(r.exit);
+// a large write must flush before exit, so end without process.exit()
+if (r.stdoutBytes) { process.stdout.write('x'.repeat(r.stdoutBytes)); process.exitCode = r.exit; } else process.exit(r.exit);
 `);
   fs.writeFileSync(path.join(scriptsDir, 'package.json'), '{"type":"commonjs"}');
 });
@@ -108,31 +131,84 @@ describe('sendToC4', () => {
     expect(r.replies).toEqual([null]);
   });
 
-  it('gives only the may-not-have-arrived notice after two unstructured failures', async () => {
+  it('runs c4-receive without a timeout', async () => {
+    script({ exit: 0, stdout: '{"ok":true}' });
+    await send();
+    expect(spawn.calls).toHaveLength(1);
+    expect(spawn.calls[0].opts.timeout ?? 0).toBe(0);
+  });
+
+  it('does not resend when c4-receive is killed after it ran', async () => {
+    // the fake records the call (as Core would store it), then dies like a killed process
     writeOptions(SG);
-    script({ exit: 2, stdout: 'crash at /some/path/c4-receive.js' }, { exit: 2, stdout: 'crash again' });
+    script({ exit: 0, signal: 'SIGKILL' }, { exit: 0, stdout: '{"ok":true}' });
     const r = await send();
-    expect(r.outcome).toBe('failed');
-    expect(r.calls).toHaveLength(2);
+    expect(r.outcome).toBe('uncertain');
+    expect(r.calls).toHaveLength(1);
     expect(r.replies).toEqual([UNCERTAIN_REPLY]);
   });
 
-  it('treats an error without a message as unstructured and retries', async () => {
+  it('does not resend after an unstructured failure', async () => {
+    writeOptions(SG);
+    script({ exit: 2, stdout: 'crash at /some/path/c4-receive.js' }, { exit: 0, stdout: '{"ok":true}' });
+    const r = await send();
+    expect(r.outcome).toBe('uncertain');
+    expect(r.calls).toHaveLength(1);
+    expect(r.replies).toEqual([UNCERTAIN_REPLY]);
+  });
+
+  it('does not resend when c4-receive output exceeds the buffer limit', async () => {
+    // the call is recorded first; more than execFile's 1 MiB default then makes
+    // Node kill it with a string error code, which is not a failed start
+    writeOptions(SG);
+    script({ exit: 0, stdoutBytes: 2 * 1024 * 1024 }, { exit: 0, stdout: '{"ok":true}' });
+    const r = await send();
+    expect(r.outcome).toBe('uncertain');
+    expect(r.calls).toHaveLength(1);
+    expect(r.replies).toEqual([UNCERTAIN_REPLY]);
+  });
+
+  it('treats an error without a message as unstructured and does not resend', async () => {
     writeOptions(SG);
     script({ exit: 1, stdout: JSON.stringify({ ok: false, error: { code: 'X' } }) }, { exit: 0, stdout: '{"ok":true}' });
     const r = await send();
+    expect(r.outcome).toBe('uncertain');
+    expect(r.calls).toHaveLength(1);
+    expect(r.replies).toEqual([UNCERTAIN_REPLY]);
+  });
+
+  it('retries once with the same group when c4-receive never started', async () => {
+    writeOptions(SG);
+    spawn.failures = 1;
+    script({ exit: 0, stdout: '{"ok":true}' });
+    const r = await send();
     expect(r.outcome).toBe('sent');
-    expect(r.calls).toHaveLength(2);
+    expect(spawn.calls).toHaveLength(2);
+    expect(r.calls).toHaveLength(1);
+    expect(spawn.calls[1].args).toEqual(spawn.calls[0].args);
     expect(r.replies).toEqual([]);
   });
 
+  it('gives only the may-not-have-arrived notice when the retry also never started', async () => {
+    writeOptions(SG);
+    spawn.failures = 2;
+    script({ exit: 0, stdout: '{"ok":true}' });
+    const r = await send();
+    expect(r.outcome).toBe('failed');
+    expect(spawn.calls).toHaveLength(2);
+    expect(r.calls).toHaveLength(0);
+    expect(r.replies).toEqual([UNCERTAIN_REPLY]);
+  });
+
   it('rereads the options file before the retry', async () => {
-    // old Core on the first call; Core upgraded between the failure and the retry
-    script({ exit: 2, stdout: 'crash', options: SG }, { exit: 0, stdout: '{"ok":true}' });
+    // old Core on the first call; Core upgraded between the failed spawn and the retry
+    spawn.failures = 1;
+    spawn.onFail = () => writeOptions(SG);
+    script({ exit: 0, stdout: '{"ok":true}' });
     const r = await send();
     expect(r.outcome).toBe('sent');
-    expect(r.calls[0]).not.toContain('--session-group');
-    expect(r.calls[1].slice(-2)).toEqual(['--session-group', 'group-100777:topic-9']);
+    expect(spawn.calls[0].args).not.toContain('--session-group');
+    expect(r.calls[0].slice(-2)).toEqual(['--session-group', 'group-100777:topic-9']);
   });
 
   it.each([[null], [undefined]])(
@@ -142,13 +218,4 @@ describe('sendToC4', () => {
       expect(r.calls).toHaveLength(1);
       expect(r.replies).toEqual([UNCERTAIN_REPLY]);
     });
-
-  it('retries an unstructured failure once with the same group', async () => {
-    writeOptions(SG);
-    script({ exit: 2, stdout: 'crash' }, { exit: 0, stdout: '{"ok":true}' });
-    const r = await send();
-    expect(r.outcome).toBe('sent');
-    expect(r.calls).toHaveLength(2);
-    expect(r.calls[1]).toEqual(r.calls[0]);
-  });
 });
