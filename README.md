@@ -71,8 +71,20 @@ zylos uninstall telegram
 | Private chat (owner/whitelisted) | Responds via Claude |
 | Smart group message | Receives all messages |
 | @mention in allowed group | Responds with recent context |
-| Owner @mention in any group | Always responds |
+| Owner text @mention in any group | Replies to that message, unless groupPolicy is disabled |
 | Unknown user | Ignored |
+
+Replies to owner mentions in unlisted groups and username-allowed DMs are checked
+against the component's inbound message logs and current access policy. Keep the
+full reply endpoint unchanged. These exceptions require an original message to
+reply to; they do not allow proactive sends. Missing logs deny exceptional replies.
+Group replies are visible to everyone in the group.
+
+Policy values are case-sensitive. Invalid hand-edited values may still accept
+inbound messages. Outbound checks reuse the same fallback: the owner remains
+allowed, and unknown policies use the DM/group allowlist.
+Fix them with `admin.js set-dm-policy <open|allowlist|owner>` or
+`admin.js set-group-policy <open|allowlist|disabled>`.
 
 ## Documentation
 

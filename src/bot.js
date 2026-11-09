@@ -398,6 +398,7 @@ bot.on('text', (ctx) => {
     timestamp: new Date().toISOString(),
     message_id: messageId,
     user_id: ctx.from.id,
+    username: ctx.from.username || null,
     user_name: userName,
     text: ctx.message.text,
     thread_id: threadId
@@ -413,7 +414,7 @@ bot.on('text', (ctx) => {
 
     logAndRecord(chatId, logEntry, config);
     const quotedContent = getReplyToContext(ctx.message);
-    const endpoint = endpointFromCtx(ctx, { withThread: false });
+    const endpoint = endpointFromCtx(ctx);
     const correlationId = `${chatId}:${messageId}`;
     bot.telegram.callApi('setMessageReaction', {
       chat_id: chatId,
@@ -556,6 +557,7 @@ bot.on('photo', async (ctx) => {
       timestamp: new Date().toISOString(),
       message_id: messageId,
       user_id: ctx.from.id,
+      username: ctx.from.username || null,
       user_name: userName,
       text: `${caption}\n${photoInfo}`,
       thread_id: threadId
@@ -611,6 +613,7 @@ bot.on('photo', async (ctx) => {
     timestamp: new Date().toISOString(),
     message_id: messageId,
     user_id: ctx.from.id,
+    username: ctx.from.username || null,
     user_name: userName,
     text: logText,
     thread_id: threadId
@@ -722,6 +725,7 @@ bot.on('document', async (ctx) => {
       timestamp: new Date().toISOString(),
       message_id: messageId,
       user_id: ctx.from.id,
+      username: ctx.from.username || null,
       user_name: userName,
       text: `${caption}\n${fileInfo}`,
       thread_id: threadId
@@ -777,6 +781,7 @@ bot.on('document', async (ctx) => {
     timestamp: new Date().toISOString(),
     message_id: messageId,
     user_id: ctx.from.id,
+    username: ctx.from.username || null,
     user_name: userName,
     text: logText,
     thread_id: threadId
@@ -883,6 +888,7 @@ bot.on('voice', async (ctx) => {
       timestamp: new Date().toISOString(),
       message_id: messageId,
       user_id: ctx.from.id,
+      username: ctx.from.username || null,
       user_name: userName,
       text: '[voice message]',
       thread_id: threadId
@@ -948,6 +954,7 @@ bot.on('voice', async (ctx) => {
     timestamp: new Date().toISOString(),
     message_id: messageId,
     user_id: ctx.from.id,
+    username: ctx.from.username || null,
     user_name: userName,
     text: '[voice message]',
     thread_id: threadId

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Enforce DM and group destination policies before outbound text, media, SKIP,
+  or reaction API calls (#78).
+- Preserve replies to accepted inbound username-only DMs and owner text mentions
+  in unlisted groups using component message logs and current access policy. These replies
+  remain bound to the original chat/message/thread, and groupPolicy=disabled
+  still blocks them. Keep the complete reply endpoint supplied by C4.
+- Preserve thread routing for private text replies, including username-allowed
+  topic DMs. Log actual usernames separately from display names.
+
+### Changed
+- Outbound destinations must be canonical numeric Telegram chat IDs. Under DM
+  allowlist policy, username-only entries (including legacy whitelist usernames)
+  cannot authorize proactive sends; add the user's numeric DM ID. Username and
+  @channel destinations are rejected. Exceptional replies require an original
+  message in the component log and retain reply-to on every chunk and attachment.
+  Missing logs deny exceptions; older DM logs without a username require a new
+  inbound message or numeric allowlist entry for username-only access.
+- DM allowlist admin commands warn when entries cannot authorize proactive sends.
+
 ## [0.5.0] - 2026-11-09
 
 ### Added

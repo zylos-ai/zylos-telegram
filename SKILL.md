@@ -177,7 +177,38 @@ DM and group access are controlled by independent policies:
 
 **Group (groupPolicy):** `open` (any group) | `allowlist` (configured groups only) | `disabled` (no groups)
 
+These destination policies also apply to outbound text, images, files, and
+reaction cleanup through `scripts/send.js`. Endpoints must use numeric chat IDs:
+positive for DMs, negative for groups. `owner` permits only the bound owner;
+`allowlist` permits the owner and numeric IDs in `dmAllowFrom` (including legacy
+`whitelist.chat_ids`). Username-only entries cannot authorize a proactive outbound
+numeric destination; add its verified numeric ID. Group allowlists use the `groups` map;
+`allowFrom` controls inbound senders, not outbound destinations. A denied send
+exits nonzero with the blocking policy before making any Telegram API request.
+
+**Replies to accepted inbound messages:** preserve the full C4 reply endpoint.
+If the normal destination policy denies a send, the component checks its own
+message log for the original chat, message and thread. In an unlisted group the
+logged sender must be the current owner; for a username-allowlisted DM the logged
+sender must match the DM ID and remain allowed by the current policy. Only the
+actual logged `username` is used, never the display name. Older logs without a
+username cannot prove username-only DM access; ask for a new message or configure
+the numeric DM ID. Owner DMs use normal policy and need no log proof.
+`groupPolicy: disabled` still blocks all group replies. Missing logs deny the
+exception. There is no expiry or token-dependent signature; queued endpoints can
+still be used while their log proof and current access policy allow them.
+These exceptional replies keep reply-to on every chunk and attachment. If the
+original message cannot be replied to, sending fails instead of retrying without
+reply-to. This never adds the destination to the allowlist. Group replies are
+visible to all group members.
+
 Per-group options: `mode` (mention/smart), `allowFrom` (restrict senders), `historyLimit`.
+
+Policy values are case-sensitive. Hand-edited invalid values can still be accepted
+by legacy inbound handling. Outbound checks reuse that behavior: the owner remains
+allowed, and unknown policies use the DM/group allowlist. Correct the configuration
+with `admin.js set-dm-policy <open|allowlist|owner>` or
+`admin.js set-group-policy <open|allowlist|disabled>`; use lowercase values.
 
 ### Group join behavior (on bot invite)
 

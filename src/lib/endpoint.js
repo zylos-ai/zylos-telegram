@@ -27,14 +27,10 @@ export function buildEndpoint(chatId, { messageId, threadId, topicId } = {}) {
 /**
  * Endpoint for the message in a Telegraf context.
  * @param {object} ctx - Telegraf context
- * @param {object} [opts]
- * @param {boolean} [opts.withThread=true] - false keeps the private text path's
- *   historical endpoint (chat + message only, no thread or topic keys)
  * @returns {string}
  */
-export function endpointFromCtx(ctx, { withThread = true } = {}) {
+export function endpointFromCtx(ctx) {
   const messageId = ctx.message?.message_id;
-  if (!withThread) return buildEndpoint(ctx.chat.id, { messageId });
   return buildEndpoint(ctx.chat.id, {
     messageId,
     threadId: ctx.message?.message_thread_id || null,

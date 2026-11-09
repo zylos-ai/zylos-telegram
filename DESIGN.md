@@ -536,7 +536,17 @@ zylos uninstall telegram [--purge]
 - [x] Private messages are correctly delivered to c4-receive
 - [x] Images are downloaded and their paths are passed through
 - [x] Owner auto-binding flow works correctly
-- [x] Owner can @bot in any group to trigger a response
+- [x] Owner can text @bot in any group to trigger a reply, unless groupPolicy is disabled
+- Replies outside destination policy require the original message in the component
+  log for that chat/thread and a current-policy check: group sender must be the
+  current owner and groups must not be disabled; DM sender must match the chat ID
+  and remain allowed using the actual logged username, never a display name.
+  Lookup scans JSONL logs from the end in blocks and denies missing proof.
+  Every chunk/media reply retains reply-to; no fallback to an independent send.
+  There is no endpoint signature, expiry, or token dependency. Logs without an
+  actual username cannot prove username-only DM access. This guards accidental
+  misrouting, not hostile local code with access to logs and the bot credential.
+  The exception never adds group or DM allowlist entries.
 - [x] `zylos upgrade telegram` preserves user config and performs migration
 - [x] `zylos uninstall telegram` cleans up correctly
 
