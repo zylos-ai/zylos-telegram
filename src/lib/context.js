@@ -1,5 +1,5 @@
 /**
- * In-memory chat history and context formatting for zylos-telegram v0.2.0
+ * In-memory chat history and context formatting for zylos-telegram
  */
 
 import fs from 'fs';
@@ -229,7 +229,7 @@ export function formatMessage(opts) {
 
   // Smart mode hint — helps AI decide whether to respond
   if (smartHint) {
-    parts.push(`<smart-mode>\nDecide whether to respond. Do NOT reply if: the message is unrelated to you, just casual chat, or doesn't need your input. Only reply when: 1) someone asks a question you can help with, 2) discussing technical topics you know well, 3) someone clearly needs assistance. When uncertain, prefer NOT to reply. Reply with exactly [SKIP] to stay silent.\n</smart-mode>\n\n`);
+    parts.push(`<smart-mode>\nDecide whether to respond. Do NOT reply if: the message is unrelated to you, just casual chat, or doesn't need your input. Only reply when: 1) someone asks a question you can help with, 2) the discussion is on a topic you can substantially help with, 3) someone clearly needs assistance. When uncertain, prefer NOT to reply. Reply with exactly [SKIP] to stay silent.\n</smart-mode>\n\n`);
   }
 
   // Current message

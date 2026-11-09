@@ -1,5 +1,5 @@
 /**
- * Shared utilities for zylos-telegram v0.2.0
+ * Shared utilities for zylos-telegram
  */
 
 /**
@@ -52,7 +52,8 @@ export function historyKeyToLogFile(historyKey) {
 
 /**
  * Escape user-generated content for safe embedding inside XML tags.
- * Prevents tag injection from user messages.
+ * Prevents tag injection from user messages. Quotes are left as they are:
+ * every C4 block is element content, never an attribute value.
  *
  * @param {string} text
  * @returns {string}
@@ -62,9 +63,7 @@ export function escapeXml(text) {
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/'/g, '&apos;')
-    .replace(/"/g, '&quot;');
+    .replace(/>/g, '&gt;');
 }
 
 /**
