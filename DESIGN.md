@@ -203,7 +203,11 @@ node send.js "8101553026" "[MEDIA:file]/path/to/document.pdf"
 **Incoming message format:**
 
 The source label is on its own first line; the speaker is inside
-`<current-message>` (same layout as zylos-lark). Text and names are XML-escaped.
+`<current-message>` (same layout as zylos-lark). In text and names, `&`, `<`
+and `>` are escaped so user text cannot open or close a tag; quotes are left as
+typed, because every block is element content, never an attribute value.
+In a smart-mode group a `<smart-mode>` hint (the zylos-component-template
+standard text) comes right before `<current-message>`.
 
 ```
 # Private chat

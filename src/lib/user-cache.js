@@ -1,5 +1,5 @@
 /**
- * User name cache for zylos-telegram v0.2.0
+ * User name cache for zylos-telegram
  * In-memory with TTL, persisted to file every 5 minutes.
  */
 

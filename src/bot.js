@@ -37,6 +37,8 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const { version: PACKAGE_VERSION } = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
 
 let config = loadConfig();
 
@@ -1122,7 +1124,7 @@ bot.catch((err, ctx) => {
 bot.launch({
   allowedUpdates: ['message', 'my_chat_member']
 }).then(() => {
-  console.log('[telegram] zylos-telegram v0.2.0 started');
+  console.log(`[telegram] zylos-telegram v${PACKAGE_VERSION} started`);
   console.log(`[telegram] Proxy: ${proxyUrl ? redactUrlCreds(proxyUrl) : 'none'}`);
   console.log(`[telegram] Bot: @${bot.botInfo?.username}`);
 }).catch((err) => {

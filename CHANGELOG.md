@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (killed, crashed, unparseable output) is not retried; the user gets the
   "may not have reached me" notice instead. Only a call that never started is
   retried once (#76).
+- Stop escaping quotes in agent-visible message text: only `&`, `<` and `>`
+  are escaped, so quoted words no longer reach the agent as `&quot;` (#70).
+- The startup log reports the installed version from `package.json` instead of
+  a hardcoded `v0.2.0`; stale `v0.2.0` header comments removed (#75).
 - Enforce DM and group destination policies before outbound text, media, SKIP,
   or reaction API calls (#78).
 - Preserve replies to accepted inbound username-only DMs and owner text mentions
@@ -23,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   topic DMs. Log actual usernames separately from display names.
 
 ### Changed
+- Smart-mode hint uses the zylos-component-template standard text: item 2 is
+  now "the discussion is on a topic you can substantially help with" (#77).
 - Outbound destinations must be canonical numeric Telegram chat IDs. Under DM
   allowlist policy, username-only entries (including legacy whitelist usernames)
   cannot authorize proactive sends; add the user's numeric DM ID. Username and

@@ -113,7 +113,7 @@ export function isWhitelisted(config, ctx) { return isDmAllowed(config, ctx); }
 export function isAuthorized(config, ctx) { return isDmAllowed(config, ctx); }
 
 // ============================================================
-// Group policy (v0.2.0 - replaces allowed_groups/smart_groups)
+// Group policy (replaces the legacy allowed_groups/smart_groups)
 // ============================================================
 
 /**
