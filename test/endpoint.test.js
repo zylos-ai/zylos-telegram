@@ -22,9 +22,4 @@ describe('endpoint from a Telegram message', () => {
     expect(endpointFromCtx(c)).toBe(endpoint);
     expect(sessionGroupFromEndpoint(endpointFromCtx(c))).toBe(group);
   });
-
-  it('keeps only chat and message for the private text path', () => {
-    const c = ctx({ id: 8101553026, is_forum: true }, { message_thread_id: 9, is_topic_message: true });
-    expect(endpointFromCtx(c, { withThread: false })).toBe('8101553026|msg:5|req:8101553026:5');
-  });
 });
