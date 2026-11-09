@@ -537,14 +537,16 @@ zylos uninstall telegram [--purge]
 - [x] Images are downloaded and their paths are passed through
 - [x] Owner auto-binding flow works correctly
 - [x] Owner can text @bot in any group to trigger a reply, unless groupPolicy is disabled
-- Replies outside destination policy require a signed inbound reply grant,
-  bound to chat/message/thread/sender, expiring after 24 hours and checked against
-  current access settings. Every chunk/media reply retains reply-to; no fallback
-  to an unthreaded send. This also preserves accepted username-only DM replies.
-  The HMAC uses the bot token with a reply-specific domain; token rotation invalidates
-  outstanding grants. This guards accidental misrouting, not a hostile local process
-  that already has the bot credential. Grants are reusable only for the original
-  message until expiry; they do not add group or DM allowlist entries.
+- Replies outside destination policy require the original message in the component
+  log for that chat/thread and a current-policy check: group sender must be the
+  current owner and groups must not be disabled; DM sender must match the chat ID
+  and remain allowed using the actual logged username, never a display name.
+  Lookup scans JSONL logs from the end in blocks and denies missing proof.
+  Every chunk/media reply retains reply-to; no fallback to an independent send.
+  There is no endpoint signature, expiry, or token dependency. Logs without an
+  actual username cannot prove username-only DM access. This guards accidental
+  misrouting, not hostile local code with access to logs and the bot credential.
+  The exception never adds group or DM allowlist entries.
 - [x] `zylos upgrade telegram` preserves user config and performs migration
 - [x] `zylos uninstall telegram` cleans up correctly
 

@@ -38,9 +38,12 @@ describe('outbound destination policy', () => {
     expect(() => assertOutboundAllowed(config({ groupPolicy: 'disabled' }), '-100')).toThrow('groupPolicy=disabled');
   });
 
-  it('rejects unknown policies, including for the owner', () => {
-    expect(() => assertOutboundAllowed(config({ dmPolicy: 'typo' }), '123')).toThrow('dmPolicy=typo');
-    expect(() => assertOutboundAllowed(config({ groupPolicy: 'typo' }), '-100')).toThrow('groupPolicy=typo');
+  it('matches inbound fallback behavior for unknown policies', () => {
+    expect(() => assertOutboundAllowed(config({ dmPolicy: 'Owner' }), '123')).not.toThrow();
+    expect(() => assertOutboundAllowed(config({ dmPolicy: 'typo' }), '456')).not.toThrow();
+    expect(() => assertOutboundAllowed(config({ groupPolicy: 'typo' }), '-100')).not.toThrow();
+    expect(() => assertOutboundAllowed(config({ dmPolicy: 'typo' }), '789')).toThrow('dmPolicy=typo');
+    expect(() => assertOutboundAllowed(config({ groupPolicy: 'typo' }), '-101')).toThrow('groupPolicy=typo');
   });
 
   it.each(['', '0', '-0', '0123', '+123', '123 ', '@publicchannel', '--123', '1.5', '1e3', '123|msg:1', null])(

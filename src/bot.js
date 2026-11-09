@@ -15,8 +15,7 @@ import { fileURLToPath } from 'url';
 import { loadConfig, getEnv, DATA_DIR } from './lib/config.js';
 import { getHistoryKey } from './lib/utils.js';
 import { getReplyToContext } from './lib/reply.js';
-import { endpointFromCtx as routingEndpointFromCtx } from './lib/endpoint.js';
-import { authorizeInboundReply } from './lib/reply-auth.js';
+import { endpointFromCtx } from './lib/endpoint.js';
 import { sendToC4 } from './lib/c4.js';
 import {
   hasOwner, bindOwner, isDmAllowed, isOwner,
@@ -59,10 +58,6 @@ if (proxyUrl) {
 }
 
 const bot = new Telegraf(botToken, botOptions);
-
-function endpointFromCtx(ctx, options = {}) {
-  return authorizeInboundReply(loadConfig(), ctx, routingEndpointFromCtx(ctx, options), botToken, options);
-}
 
 const TRANSCRIBE_SCRIPT = path.join(process.env.HOME, 'zylos/bin/transcribe');
 const VOICE_ENABLED = fs.existsSync(TRANSCRIBE_SCRIPT);
@@ -403,6 +398,7 @@ bot.on('text', (ctx) => {
     timestamp: new Date().toISOString(),
     message_id: messageId,
     user_id: ctx.from.id,
+    username: ctx.from.username || null,
     user_name: userName,
     text: ctx.message.text,
     thread_id: threadId
@@ -418,7 +414,7 @@ bot.on('text', (ctx) => {
 
     logAndRecord(chatId, logEntry, config);
     const quotedContent = getReplyToContext(ctx.message);
-    const endpoint = endpointFromCtx(ctx, { withThread: false });
+    const endpoint = endpointFromCtx(ctx);
     const correlationId = `${chatId}:${messageId}`;
     bot.telegram.callApi('setMessageReaction', {
       chat_id: chatId,
@@ -495,7 +491,7 @@ bot.on('text', (ctx) => {
 
     const cleanText = mentioned ? replaceBotMention(ctx) : ctx.message.text;
 
-    const endpoint = endpointFromCtx(ctx, { ownerMention: senderIsOwner && mentioned });
+    const endpoint = endpointFromCtx(ctx);
     const correlationId = `${chatId}:${messageId}`;
     const smartNoMention = isSmart && !mentioned;
 
@@ -561,6 +557,7 @@ bot.on('photo', async (ctx) => {
       timestamp: new Date().toISOString(),
       message_id: messageId,
       user_id: ctx.from.id,
+      username: ctx.from.username || null,
       user_name: userName,
       text: `${caption}\n${photoInfo}`,
       thread_id: threadId
@@ -616,6 +613,7 @@ bot.on('photo', async (ctx) => {
     timestamp: new Date().toISOString(),
     message_id: messageId,
     user_id: ctx.from.id,
+    username: ctx.from.username || null,
     user_name: userName,
     text: logText,
     thread_id: threadId
@@ -727,6 +725,7 @@ bot.on('document', async (ctx) => {
       timestamp: new Date().toISOString(),
       message_id: messageId,
       user_id: ctx.from.id,
+      username: ctx.from.username || null,
       user_name: userName,
       text: `${caption}\n${fileInfo}`,
       thread_id: threadId
@@ -782,6 +781,7 @@ bot.on('document', async (ctx) => {
     timestamp: new Date().toISOString(),
     message_id: messageId,
     user_id: ctx.from.id,
+    username: ctx.from.username || null,
     user_name: userName,
     text: logText,
     thread_id: threadId
@@ -888,6 +888,7 @@ bot.on('voice', async (ctx) => {
       timestamp: new Date().toISOString(),
       message_id: messageId,
       user_id: ctx.from.id,
+      username: ctx.from.username || null,
       user_name: userName,
       text: '[voice message]',
       thread_id: threadId
@@ -953,6 +954,7 @@ bot.on('voice', async (ctx) => {
     timestamp: new Date().toISOString(),
     message_id: messageId,
     user_id: ctx.from.id,
+    username: ctx.from.username || null,
     user_name: userName,
     text: '[voice message]',
     thread_id: threadId

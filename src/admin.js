@@ -191,7 +191,7 @@ const commands = {
       if (legacyUsers.length) console.log(`  usernames: ${legacyUsers.join(', ')}`);
     }
     if (allowFrom.some(value => !/^[1-9]\d*$/.test(String(value))) || legacyUsers.length) {
-      console.warn('Warning: username/non-numeric entries cannot authorize proactive outbound sends under allowlist policy. Replies require the signed inbound endpoint. Add each user\'s numeric DM ID with add-dm-allow <numeric_id> for proactive sends.');
+      console.warn('Warning: username/non-numeric entries cannot authorize proactive outbound sends under allowlist policy. Replies require the original inbound endpoint and component log. Add each user\'s numeric DM ID with add-dm-allow <numeric_id> for proactive sends.');
     }
   },
 
@@ -215,7 +215,7 @@ const commands = {
       console.log(`${value} already in dmAllowFrom`);
     }
     if (!/^[1-9]\d*$/.test(String(value))) {
-      console.warn('Warning: this entry cannot authorize proactive outbound sends under allowlist policy. Replies require the signed inbound endpoint. Also add the user\'s numeric DM ID with add-dm-allow <numeric_id> for proactive sends.');
+      console.warn('Warning: this entry cannot authorize proactive outbound sends under allowlist policy. Replies require the original inbound endpoint and component log. Also add the user\'s numeric DM ID with add-dm-allow <numeric_id> for proactive sends.');
     }
     if ((config.dmPolicy || 'owner') !== 'allowlist') {
       console.log(`Note: dmPolicy is "${config.dmPolicy || 'owner'}", set to "allowlist" for this to take effect.`);

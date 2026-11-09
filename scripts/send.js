@@ -14,7 +14,7 @@ import dotenv from 'dotenv';
 import { parseEndpoint } from '../src/lib/utils.js';
 import { DATA_DIR, loadConfig } from '../src/lib/config.js';
 import { assertOutboundAllowed } from '../src/lib/auth.js';
-import { isAuthorizedReply } from '../src/lib/reply-auth.js';
+import { isAuthorizedReply } from '../src/lib/reply-proof.js';
 import { redactSecrets } from '../src/lib/redact.js';
 import { markdownToHtml, hasMarkdownContent, stripHtmlTags } from '../src/lib/markdown-html.js';
 import { splitHtmlMessage } from '../src/lib/html-split.js';
@@ -236,7 +236,7 @@ async function sendText(text) {
       params.message_thread_id = threadId;
     }
 
-    // Exceptional reply grants must keep every chunk attached to the trigger.
+    // Exceptional replies must keep every chunk attached to the trigger.
     if ((isFirstChunk || replyOnly) && triggerMsgId) {
       params.reply_to_message_id = triggerMsgId;
     }
@@ -390,7 +390,7 @@ async function main() {
     try {
       assertOutboundAllowed(config, chatId);
     } catch (err) {
-      if (!isAuthorizedReply(config, args[0], BOT_TOKEN)) throw err;
+      if (!isAuthorizedReply(config, args[0], path.join(DATA_DIR, 'logs'))) throw err;
       replyOnly = true;
     }
 

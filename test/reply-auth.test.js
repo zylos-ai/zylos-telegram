@@ -1,99 +1,129 @@
-import { describe, expect, it } from 'vitest';
-import { authorizeInboundReply, isAuthorizedReply, REPLY_AUTH_TTL_MS } from '../src/lib/reply-auth.js';
-import { endpointFromCtx } from '../src/lib/endpoint.js';
-import { sessionGroupFromEndpoint } from '../src/lib/session-group.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { isAuthorizedReply } from '../src/lib/reply-proof.js';
 
-const secret = 'fixture-token';
-const now = 1700000000000;
+let logsDir;
 const config = () => ({ owner: { chat_id: '123' }, dmPolicy: 'allowlist', dmAllowFrom: ['@alice'], groupPolicy: 'allowlist', groups: {} });
-const group = (sender = 123) => ({ from: { id: sender }, chat: { id: -101, type: 'supergroup', is_forum: true },
-  message: { message_id: 7, message_thread_id: 9, is_topic_message: true } });
-const dm = () => ({ from: { id: 456, username: 'alice' }, chat: { id: 456, type: 'private' }, message: { message_id: 7 } });
-const sign = (cfg = config(), ctx = group(), options = {}) => authorizeInboundReply(cfg, ctx, endpointFromCtx(ctx), secret, { ownerMention: true, now, ...options });
+const groupEndpoint = '-101|msg:7|req:-101:7|thread:9';
+const groupEntry = () => ({ message_id: 7, user_id: 123, thread_id: 9, text: 'hello' });
+const dmEntry = () => ({ message_id: 7, user_id: 456, username: 'alice', user_name: 'Display name', thread_id: null });
 
-describe('authenticated inbound reply authorization', () => {
-  it('allows an owner mention in an unlisted group without authorizing the group', () => {
+beforeEach(() => { logsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-reply-proof-')); });
+afterEach(() => { fs.rmSync(logsDir, { recursive: true, force: true }); });
+
+function log(file, ...entries) {
+  fs.writeFileSync(path.join(logsDir, file), entries.map(entry => typeof entry === 'string' ? entry : JSON.stringify(entry)).join('\n') + '\n');
+}
+const allowed = (endpoint = groupEndpoint, cfg = config()) => isAuthorizedReply(cfg, endpoint, logsDir);
+
+describe('component message-log proof for exceptional replies', () => {
+  it('allows the current owner in an unlisted group without adding group access', () => {
+    log('-101_t_9.log', groupEntry());
     const cfg = config();
-    const endpoint = sign(cfg);
-    expect(isAuthorizedReply(cfg, endpoint, secret, now)).toBe(true);
+    expect(allowed(groupEndpoint, cfg)).toBe(true);
     expect(cfg.groups).toEqual({});
-    expect(sessionGroupFromEndpoint(endpoint)).toBe('group-101:topic-9');
-    expect(isAuthorizedReply(cfg, '-101|msg:7|req:-101:7|thread:9', secret, now)).toBe(false);
+  });
+
+  it('accepts old logged messages and legacy endpoints without a request key', () => {
+    log('-101_t_9.log', { ...groupEntry(), timestamp: '2020-01-01T00:00:00.000Z' });
+    expect(allowed('-101|msg:7|thread:9')).toBe(true);
   });
 
   it.each([
-    ['other sender', () => group(999), {}],
-    ['no verified mention', group, { ownerMention: false }],
-  ])('does not issue a grant for %s', (_label, ctx, opts) => {
-    expect(sign(config(), ctx(), opts)).not.toContain('reply-auth:');
+    ['target', '-102|msg:7|thread:9'],
+    ['message', '-101|msg:8|thread:9'],
+    ['request', '-101|msg:7|req:-101:8|thread:9'],
+    ['thread', '-101|msg:7|thread:10'],
+    ['missing message', '-101|thread:9'],
+    ['missing thread', '-101|msg:7'],
+    ['non-numeric target', '../-101|msg:7|thread:9'],
+    ['invalid message', '-101|msg:0|thread:9'],
+    ['invalid thread', '-101|msg:7|thread:../9'],
+  ])('rejects a different or invalid %s', (_label, endpoint) => {
+    log('-101_t_9.log', groupEntry());
+    expect(allowed(endpoint)).toBe(false);
   });
 
-  it.each(['disabled', 'typo'])('denies group policy %s at issuance and after issuance', policy => {
-    const cfg = config();
-    const endpoint = sign(cfg);
-    cfg.groupPolicy = policy;
-    expect(sign(cfg)).not.toContain('reply-auth:');
-    expect(isAuthorizedReply(cfg, endpoint, secret, now)).toBe(false);
+  it('checks thread identity inside the selected log', () => {
+    log('-101_t_9.log', { ...groupEntry(), thread_id: 10 });
+    expect(allowed()).toBe(false);
   });
 
-  it('denies a grant after the owner changes', () => {
+  it('rechecks current owner and disabled group policy', () => {
+    log('-101_t_9.log', groupEntry());
     const cfg = config();
-    const endpoint = sign(cfg);
     cfg.owner.chat_id = '999';
-    expect(isAuthorizedReply(cfg, endpoint, secret, now)).toBe(false);
+    expect(allowed(groupEndpoint, cfg)).toBe(false);
+    cfg.owner.chat_id = '123';
+    cfg.groupPolicy = 'disabled';
+    expect(allowed(groupEndpoint, cfg)).toBe(false);
   });
 
-  it('preserves username-only DM replies but rechecks the live allowlist', () => {
+  it('rejects another sender and outgoing bot history', () => {
+    log('-101_t_9.log', { ...groupEntry(), user_id: 999 }, { ...groupEntry(), message_id: 'bot:7', user_id: 'bot' });
+    expect(allowed()).toBe(false);
+  });
+
+  it('uses the recorded username and current DM policy', () => {
+    log('456.log', dmEntry());
     const cfg = config();
-    const endpoint = sign(cfg, dm());
-    expect(isAuthorizedReply(cfg, endpoint, secret, now)).toBe(true);
+    expect(allowed('456|msg:7', cfg)).toBe(true);
     cfg.dmAllowFrom = [];
-    expect(isAuthorizedReply(cfg, endpoint, secret, now)).toBe(false);
-    expect(sign(cfg, dm())).not.toContain('reply-auth:');
+    expect(allowed('456|msg:7', cfg)).toBe(false);
+    cfg.dmAllowFrom = ['@alice'];
+    cfg.dmPolicy = 'owner';
+    expect(allowed('456|msg:7', cfg)).toBe(false);
   });
 
-  it('preserves legacy username DM replies', () => {
+  it('preserves legacy username allowlists and case-insensitive matching', () => {
+    log('456.log', { ...dmEntry(), username: 'ALICE' });
     const cfg = config();
     cfg.dmAllowFrom = [];
     cfg.whitelist = { usernames: ['alice'] };
-    expect(isAuthorizedReply(cfg, sign(cfg, dm()), secret, now)).toBe(true);
+    expect(allowed('456|msg:7', cfg)).toBe(true);
   });
 
-  it('preserves the authenticated owner DM exception for an invalid DM policy', () => {
-    const cfg = config();
-    cfg.dmPolicy = 'typo';
-    const ctx = dm();
-    ctx.from.id = ctx.chat.id = 123;
-    expect(isAuthorizedReply(cfg, sign(cfg, ctx), secret, now)).toBe(true);
-    expect(sign(cfg, dm())).not.toContain('reply-auth:');
+  it.each([undefined, null, 'mallory'])('never treats a display name as username when username is %s', username => {
+    log('456.log', { ...dmEntry(), username, user_name: 'alice' });
+    expect(allowed('456|msg:7')).toBe(false);
   });
 
-  it.each([
-    ['chat', e => e.replace('-101|', '-102|')],
-    ['message', e => e.replace('msg:7', 'msg:8')],
-    ['request', e => e.replace('req:-101:7', 'req:-101:8')],
-    ['thread', e => e.replace('thread:9', 'thread:10')],
-    ['missing message', e => e.replace('|msg:7', '')],
-    ['missing request', e => e.replace('|req:-101:7', '')],
-    ['missing thread', e => e.replace('|thread:9', '')],
-    ['signature', e => e.slice(0, -1) + (e.endsWith('0') ? '1' : '0')],
-    ['forged claim', e => e.replace(/reply-auth:[^.]+/, 'reply-auth:e30')],
-  ])('rejects changed %s', (_label, change) => {
-    expect(isAuthorizedReply(config(), change(sign()), secret, now)).toBe(false);
+  it('requires the DM sender to match the destination', () => {
+    log('456.log', { ...dmEntry(), user_id: 789 });
+    expect(allowed('456|msg:7')).toBe(false);
   });
 
-  it('rejects expired, future, wrong-key, missing-key, and malformed grants', () => {
-    const endpoint = sign();
-    expect(isAuthorizedReply(config(), endpoint, secret, now + REPLY_AUTH_TTL_MS - 1)).toBe(true);
-    expect(isAuthorizedReply(config(), endpoint, secret, now + REPLY_AUTH_TTL_MS)).toBe(false);
-    expect(isAuthorizedReply(config(), endpoint, secret, now - 1)).toBe(false);
-    expect(isAuthorizedReply(config(), endpoint, 'other-key', now)).toBe(false);
-    expect(isAuthorizedReply(config(), endpoint, '', now)).toBe(false);
-    expect(isAuthorizedReply(config(), endpoint + '.extra', secret, now)).toBe(false);
+  it('supports topic DMs without reading another topic', () => {
+    log('456_t_9.log', { ...dmEntry(), thread_id: 9 });
+    expect(allowed('456|msg:7|thread:9')).toBe(true);
+    expect(allowed('456|msg:7')).toBe(false);
+    expect(allowed('456|msg:7|thread:10')).toBe(false);
   });
 
-  it('does not sign an endpoint that differs from the inbound event', () => {
-    const ctx = group();
-    expect(authorizeInboundReply(config(), ctx, '-102|msg:7|req:-102:7|thread:9', secret, { ownerMention: true })).not.toContain('reply-auth:');
+  it('finds older entries across reverse-read blocks and tolerates malformed lines', () => {
+    log('-101_t_9.log', 'broken JSON', groupEntry(),
+      { ...groupEntry(), message_id: 8, text: '中文'.repeat(12000) }, '{incomplete');
+    expect(allowed()).toBe(true);
+  });
+
+  it('preserves a matching JSON record split across UTF-8 block boundaries', () => {
+    log('-101_t_9.log', { ...groupEntry(), text: '中文'.repeat(25000) }, { ...groupEntry(), message_id: 8 });
+    expect(allowed()).toBe(true);
+  });
+
+  it('reads a final complete record without a trailing newline', () => {
+    fs.writeFileSync(path.join(logsDir, '-101_t_9.log'), JSON.stringify(groupEntry()));
+    expect(allowed()).toBe(true);
+  });
+
+  it('denies missing, deleted, malformed, or unreadable logs', () => {
+    expect(allowed()).toBe(false);
+    log('-101_t_9.log', '{broken');
+    expect(allowed()).toBe(false);
+    fs.unlinkSync(path.join(logsDir, '-101_t_9.log'));
+    fs.mkdirSync(path.join(logsDir, '-101_t_9.log'));
+    expect(allowed()).toBe(false);
   });
 });

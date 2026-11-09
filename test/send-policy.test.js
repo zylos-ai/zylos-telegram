@@ -5,7 +5,6 @@ import path from 'node:path';
 import http from 'node:http';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { authorizeInboundReply } from '../src/lib/reply-auth.js';
 import { endpointFromCtx } from '../src/lib/endpoint.js';
 
 const sendScript = fileURLToPath(new URL('../scripts/send.js', import.meta.url));
@@ -31,6 +30,15 @@ process.stdout.write('{"ok":true,"result":{}}\\n200');
   curlLog = path.join(root, 'curl.jsonl');
   configPath = path.join(root, 'zylos/components/telegram/config.json');
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(path.join(root, 'fetch.mjs'), `
+const realFetch = globalThis.fetch;
+globalThis.fetch = (url, options) => {
+  const local = new URL(url);
+  local.hostname = '127.0.0.1';
+  local.port = process.env.TG_TEST_PORT;
+  return realFetch(local, options);
+};
+`);
   records = [];
   server = http.createServer((req, res) => {
     const chunks = [];
@@ -54,9 +62,9 @@ afterEach(async () => {
 function runSend(endpoint, message, configText = JSON.stringify(cfg), env = {}) {
   if (configText !== null) fs.writeFileSync(configPath, configText);
   return new Promise(resolve => {
-    execFile(process.execPath, [sendScript, endpoint, message], {
+    execFile(process.execPath, ['--import', path.join(root, 'fetch.mjs'), sendScript, endpoint, message], {
       env: { ...process.env, HOME: root, TELEGRAM_BOT_TOKEN: 'fixture-token',
-        TELEGRAM_PROXY_URL: '', TG_TEST_CURL_LOG: curlLog,
+        TELEGRAM_PROXY_URL: '', TG_TEST_CURL_LOG: curlLog, TG_TEST_PORT: String(port),
         PATH: `${path.join(root, 'bin')}${path.delimiter}${process.env.PATH}`, ...env },
       timeout: 10000,
     }, (error, stdout, stderr) => resolve({ code: error?.code ?? 0, stdout, stderr }));
@@ -146,21 +154,26 @@ describe('real send CLI policy boundary with fake Telegram transport', () => {
     expect(fs.existsSync(path.join(root, 'zylos/components/telegram/typing/test.done'))).toBe(true);
   });
 
-  function replyEndpoint({ dm = false, now = Date.now() } = {}) {
+  function replyEndpoint({ dm = false, thread = dm ? undefined : 9, username = 'alice' } = {}) {
     const ctx = { from: { id: dm ? 789 : 123, username: dm ? 'alice' : undefined },
       chat: { id: dm ? 789 : -101, type: dm ? 'private' : 'supergroup' },
-      message: { message_id: 7, message_thread_id: dm ? undefined : 9 } };
-    return authorizeInboundReply(cfg, ctx, endpointFromCtx(ctx), 'fixture-token', { ownerMention: true, now });
+      message: { message_id: 7, message_thread_id: thread } };
+    const logs = path.join(path.dirname(configPath), 'logs');
+    fs.mkdirSync(logs, { recursive: true });
+    fs.writeFileSync(path.join(logs, `${ctx.chat.id}${thread ? `_t_${thread}` : ''}.log`), JSON.stringify({
+      message_id: 7, user_id: ctx.from.id, username: dm ? username : null, thread_id: thread || null,
+      timestamp: '2020-01-01T00:00:00Z',
+    }) + '\n');
+    return endpointFromCtx(ctx);
   }
 
-  function signedOwnerDm() {
+  function ownerDm() {
     const ctx = { from: { id: 123 }, chat: { id: 123, type: 'private' }, message: { message_id: 7 } };
-    return authorizeInboundReply(cfg, ctx, endpointFromCtx(ctx), 'fixture-token');
+    return endpointFromCtx(ctx);
   }
 
-  it('keeps normal chunk routing for a signed owner DM already allowed by policy', async () => {
-    const endpoint = signedOwnerDm();
-    expect(endpoint).toContain('|reply-auth:');
+  it('keeps normal chunk routing for an owner DM without log proof', async () => {
+    const endpoint = ownerDm();
     expect((await runSend(endpoint, 'x'.repeat(4100))).code).toBe(0);
     const sends = calls().filter(args => args.some(a => a.endsWith('/sendMessage')));
     expect(sends).toHaveLength(2);
@@ -169,9 +182,8 @@ describe('real send CLI policy boundary with fake Telegram transport', () => {
     expect(JSON.parse(sends[1].at(-1))).not.toHaveProperty('reply_to_message_id');
   });
 
-  it('keeps normal 400 reply fallback for a signed owner DM already allowed by policy', async () => {
-    const endpoint = signedOwnerDm();
-    expect(endpoint).toContain('|reply-auth:');
+  it('keeps normal 400 reply fallback for an owner DM without log proof', async () => {
+    const endpoint = ownerDm();
     const result = await runSend(endpoint, 'hello', JSON.stringify(cfg), { TG_TEST_REPLY_400: 'with-reply' });
     expect(result.code).toBe(0);
     const sends = calls().filter(args => args.some(a => a.endsWith('/sendMessage')));
@@ -195,11 +207,11 @@ describe('real send CLI policy boundary with fake Telegram transport', () => {
     cfg.dmAllowFrom.push('@alice');
     expect((await runSend(replyEndpoint({ dm: true }), 'reply')).code).toBe(0);
     const before = calls().length;
-    expect((await runSend('789|msg:7|req:789:7', 'proactive')).code).toBe(1);
+    expect((await runSend('789', 'proactive')).code).toBe(1);
     expect(calls()).toHaveLength(before);
   });
 
-  it.each(['[SKIP]', '[MEDIA:image]', '[MEDIA:file]'])('allows authenticated reply %s', async prefix => {
+  it.each(['[SKIP]', '[MEDIA:image]', '[MEDIA:file]'])('allows log-proven reply %s', async prefix => {
     const file = path.join(root, 'reply.txt');
     fs.writeFileSync(file, 'fixture');
     const result = await runSend(replyEndpoint(), prefix === '[SKIP]' ? prefix : prefix + file);
@@ -223,16 +235,42 @@ describe('real send CLI policy boundary with fake Telegram transport', () => {
     expect(records).toEqual([]);
   });
 
-  it.each(['changed-target', 'changed-message', 'expired', 'disabled', 'owner-changed', 'forged'])(
-    'rejects %s reply grants before transport or history', async kind => {
-      let endpoint = replyEndpoint(kind === 'expired' ? { now: Date.now() - 86400000 } : {});
+  it.each(['changed-target', 'changed-message', 'changed-thread', 'disabled', 'owner-changed', 'missing-log'])(
+    'rejects %s reply proof before transport or history', async kind => {
+      let endpoint = replyEndpoint();
       if (kind === 'changed-target') endpoint = endpoint.replace('-101|', '-102|');
       if (kind === 'changed-message') endpoint = endpoint.replace('msg:7', 'msg:8');
       if (kind === 'disabled') cfg.groupPolicy = 'disabled';
       if (kind === 'owner-changed') cfg.owner.chat_id = '999';
-      if (kind === 'forged') endpoint = '-101|msg:7|req:-101:7|thread:9|reply-auth:fake';
+      if (kind === 'changed-thread') endpoint = endpoint.replace('thread:9', 'thread:10');
+      if (kind === 'missing-log') fs.unlinkSync(path.join(path.dirname(configPath), 'logs/-101_t_9.log'));
       expect((await runSend(endpoint, 'reply')).code).toBe(1);
       expect(calls()).toEqual([]);
       expect(records).toEqual([]);
     });
+
+  it('keeps topic routing for a username-only DM and rechecks its allowlist', async () => {
+    cfg.dmAllowFrom.push('@alice');
+    const endpoint = replyEndpoint({ dm: true, thread: 42 });
+    expect((await runSend(endpoint, 'reply')).code).toBe(0);
+    const sends = calls().filter(args => args.some(a => a.endsWith('/sendMessage')));
+    expect(JSON.parse(sends[0].at(-1))).toMatchObject({ chat_id: '789', message_thread_id: 42, reply_to_message_id: 7 });
+    cfg.dmAllowFrom = [];
+    const before = calls().length;
+    expect((await runSend(endpoint, 'revoked')).code).toBe(1);
+    expect(calls()).toHaveLength(before);
+  });
+
+  it('permits old queued msg-only endpoints while their log proof still exists', async () => {
+    replyEndpoint();
+    expect((await runSend('-101|msg:7|thread:9', 'old reply')).code).toBe(0);
+  });
+
+  it('preserves owner and configured-group inbound fallback for miscased policies', async () => {
+    cfg.dmPolicy = 'Owner';
+    cfg.groupPolicy = 'Allowlist';
+    expect((await runSend('123', 'owner proactive')).code).toBe(0);
+    expect((await runSend('-100', 'allowed group')).code).toBe(0);
+    expect(records).toHaveLength(2);
+  });
 });

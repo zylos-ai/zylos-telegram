@@ -94,7 +94,7 @@ export function assertOutboundAllowed(config, chatId) {
   }
   if (chatId.startsWith('-')) {
     const policy = config.groupPolicy || 'allowlist';
-    if (!['open', 'allowlist', 'disabled'].includes(policy) || !isGroupAllowed(config, chatId)) {
+    if (!isGroupAllowed(config, chatId)) {
       throw new Error(`OUTBOUND_GROUP_DENIED: groupPolicy=${policy} does not allow destination ${chatId}`);
     }
     return;
@@ -103,7 +103,7 @@ export function assertOutboundAllowed(config, chatId) {
   const policy = config.dmPolicy || 'owner';
   // An outbound endpoint proves only a numeric ID, never a mutable username.
   const ctx = { from: { id: chatId }, chat: { id: chatId } };
-  if (!['open', 'allowlist', 'owner'].includes(policy) || !isDmAllowed(config, ctx)) {
+  if (!isDmAllowed(config, ctx)) {
     throw new Error(`OUTBOUND_DM_DENIED: dmPolicy=${policy} does not allow destination ${chatId}; configure the owner or an allowed numeric DM ID`);
   }
 }
