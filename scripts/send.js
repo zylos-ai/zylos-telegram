@@ -14,6 +14,7 @@ import dotenv from 'dotenv';
 import { parseEndpoint } from '../src/lib/utils.js';
 import { DATA_DIR, loadConfig } from '../src/lib/config.js';
 import { assertOutboundAllowed } from '../src/lib/auth.js';
+import { isAuthorizedReply } from '../src/lib/reply-auth.js';
 import { redactSecrets } from '../src/lib/redact.js';
 import { markdownToHtml, hasMarkdownContent, stripHtmlTags } from '../src/lib/markdown-html.js';
 import { splitHtmlMessage } from '../src/lib/html-split.js';
@@ -41,6 +42,7 @@ const triggerMsgId = parsed.msg ? parseInt(parsed.msg, 10) : null;
 const correlationId = parsed.req || null;
 const threadId = parsed.thread ? parseInt(parsed.thread, 10) : null;
 const message = args.slice(1).join(' ');
+let replyOnly = false;
 
 if (!chatId) {
   console.error('Error: invalid endpoint (missing chatId)');
@@ -234,8 +236,8 @@ async function sendText(text) {
       params.message_thread_id = threadId;
     }
 
-    // Reply-to: first chunk replies to trigger message
-    if (isFirstChunk && triggerMsgId) {
+    // Exceptional reply grants must keep every chunk attached to the trigger.
+    if ((isFirstChunk || replyOnly) && triggerMsgId) {
       params.reply_to_message_id = triggerMsgId;
     }
 
@@ -244,8 +246,8 @@ async function sendText(text) {
     } catch (err) {
       const errCode = err.telegramResponse?.error_code;
 
-      // If reply_to fails (message deleted/too old), retry without it
-      if (params.reply_to_message_id && errCode === 400) {
+      // Only normal destination access permits retrying without reply-to.
+      if (!replyOnly && params.reply_to_message_id && errCode === 400) {
         console.warn('[telegram] reply_to_message_id failed, trying without reply');
         delete params.reply_to_message_id;
         try {
@@ -294,7 +296,7 @@ async function sendPhoto(filePath) {
   try {
     return await apiRequestWithRetry('sendPhoto', params);
   } catch (err) {
-    if (params.reply_to_message_id && err.telegramResponse?.error_code === 400) {
+    if (!replyOnly && params.reply_to_message_id && err.telegramResponse?.error_code === 400) {
       console.warn('[telegram] reply_to_message_id failed, sending photo without reply');
       delete params.reply_to_message_id;
       return apiRequestWithRetry('sendPhoto', params);
@@ -318,7 +320,7 @@ async function sendDocument(filePath) {
   try {
     return await apiRequestWithRetry('sendDocument', params);
   } catch (err) {
-    if (params.reply_to_message_id && err.telegramResponse?.error_code === 400) {
+    if (!replyOnly && params.reply_to_message_id && err.telegramResponse?.error_code === 400) {
       console.warn('[telegram] reply_to_message_id failed, sending document without reply');
       delete params.reply_to_message_id;
       return apiRequestWithRetry('sendDocument', params);
@@ -384,7 +386,13 @@ function clearReaction() {
  */
 async function main() {
   try {
-    assertOutboundAllowed(loadConfig(), chatId);
+    const config = loadConfig();
+    try {
+      assertOutboundAllowed(config, chatId);
+    } catch (err) {
+      if (!isAuthorizedReply(config, args[0], BOT_TOKEN)) throw err;
+      replyOnly = true;
+    }
 
     // Smart mode skip — AI decided not to respond
     if (message.trim() === '[SKIP]') {

@@ -71,8 +71,13 @@ zylos uninstall telegram
 | Private chat (owner/whitelisted) | Responds via Claude |
 | Smart group message | Receives all messages |
 | @mention in allowed group | Responds with recent context |
-| Owner @mention in any group | Always responds |
+| Owner text @mention in any group | Replies to that message, unless groupPolicy is disabled |
 | Unknown user | Ignored |
+
+Replies to accepted inbound messages carry a signed, 24-hour reply authorization.
+This preserves owner replies in unlisted groups and replies to username-allowed
+DMs without allowing proactive sends to those destinations. Keep the full reply
+endpoint unchanged. Group replies are visible to everyone in the group.
 
 ## Documentation
 

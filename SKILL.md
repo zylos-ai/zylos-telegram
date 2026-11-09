@@ -181,10 +181,26 @@ These destination policies also apply to outbound text, images, files, and
 reaction cleanup through `scripts/send.js`. Endpoints must use numeric chat IDs:
 positive for DMs, negative for groups. `owner` permits only the bound owner;
 `allowlist` permits the owner and numeric IDs in `dmAllowFrom` (including legacy
-`whitelist.chat_ids`). Username-only entries cannot authorize an outbound numeric
-destination; add its verified numeric ID. Group allowlists use the `groups` map;
+`whitelist.chat_ids`). Username-only entries cannot authorize a proactive outbound
+numeric destination; add its verified numeric ID. Group allowlists use the `groups` map;
 `allowFrom` controls inbound senders, not outbound destinations. A denied send
 exits nonzero with the blocking policy before making any Telegram API request.
+
+**Replies to accepted inbound messages:** preserve the full C4 reply endpoint,
+including `reply-auth`. The bot signs the original chat, message, thread and
+sender with a 24-hour validity period. This permits replies to an owner's text
+@mention in an unlisted group and replies to accepted username-allowlisted DMs.
+The inbound owner DM exception also remains available when dmPolicy is misspelled;
+this does not enable proactive sends under an invalid policy. The current owner,
+DM allowlist and group policy are rechecked at send time. `groupPolicy: disabled`
+still blocks group replies. Missing, modified or expired grants do not bypass
+destination policy; ask for a fresh inbound message or configure the numeric ID.
+These exceptional replies keep reply-to on every chunk and attachment. If the
+original message cannot be replied to, sending fails instead of retrying without
+reply-to. A grant is reusable for follow-up replies to that same message during
+its validity period; it never adds the destination to the allowlist. Group replies
+are visible to all group members. Previously queued endpoints without a grant
+cannot use this exception; the sender must trigger a new inbound message.
 
 Per-group options: `mode` (mention/smart), `allowFrom` (restrict senders), `historyLimit`.
 

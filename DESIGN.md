@@ -536,7 +536,15 @@ zylos uninstall telegram [--purge]
 - [x] Private messages are correctly delivered to c4-receive
 - [x] Images are downloaded and their paths are passed through
 - [x] Owner auto-binding flow works correctly
-- [x] Owner can @bot in any group to trigger a response
+- [x] Owner can text @bot in any group to trigger a reply, unless groupPolicy is disabled
+- Replies outside destination policy require a signed inbound reply grant,
+  bound to chat/message/thread/sender, expiring after 24 hours and checked against
+  current access settings. Every chunk/media reply retains reply-to; no fallback
+  to an unthreaded send. This also preserves accepted username-only DM replies.
+  The HMAC uses the bot token with a reply-specific domain; token rotation invalidates
+  outstanding grants. This guards accidental misrouting, not a hostile local process
+  that already has the bot credential. Grants are reusable only for the original
+  message until expiry; they do not add group or DM allowlist entries.
 - [x] `zylos upgrade telegram` preserves user config and performs migration
 - [x] `zylos uninstall telegram` cleans up correctly
 

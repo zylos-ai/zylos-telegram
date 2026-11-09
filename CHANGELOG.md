@@ -10,14 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Enforce DM and group destination policies before outbound text, media, SKIP,
   or reaction API calls (#78).
+- Preserve replies to accepted inbound username-only DMs and owner text mentions
+  in unlisted groups using signed, expiring reply authorization. These replies
+  remain bound to the original chat/message/thread, and groupPolicy=disabled
+  still blocks them. Keep the complete reply endpoint supplied by C4.
 
 ### Changed
 - Outbound destinations must be canonical numeric Telegram chat IDs. Under DM
   allowlist policy, username-only entries (including legacy whitelist usernames)
-  cannot authorize replies; add the user's numeric DM ID. Username and @channel
-  destinations are rejected. Group replies require the destination to be allowed
-  by groupPolicy, including replies to owner mentions in unlisted groups.
-- DM allowlist admin commands warn when entries cannot authorize outbound replies.
+  cannot authorize proactive sends; add the user's numeric DM ID. Username and
+  @channel destinations are rejected. Without a valid inbound reply grant, group
+  sends require the destination to be allowed by groupPolicy. Old queued endpoints
+  need a fresh inbound message to obtain a reply grant.
+- DM allowlist admin commands warn when entries cannot authorize proactive sends.
 
 ## [0.5.0] - 2026-11-09
 

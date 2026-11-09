@@ -15,7 +15,8 @@ import { fileURLToPath } from 'url';
 import { loadConfig, getEnv, DATA_DIR } from './lib/config.js';
 import { getHistoryKey } from './lib/utils.js';
 import { getReplyToContext } from './lib/reply.js';
-import { endpointFromCtx } from './lib/endpoint.js';
+import { endpointFromCtx as routingEndpointFromCtx } from './lib/endpoint.js';
+import { authorizeInboundReply } from './lib/reply-auth.js';
 import { sendToC4 } from './lib/c4.js';
 import {
   hasOwner, bindOwner, isDmAllowed, isOwner,
@@ -58,6 +59,10 @@ if (proxyUrl) {
 }
 
 const bot = new Telegraf(botToken, botOptions);
+
+function endpointFromCtx(ctx, options = {}) {
+  return authorizeInboundReply(loadConfig(), ctx, routingEndpointFromCtx(ctx, options), botToken, options);
+}
 
 const TRANSCRIBE_SCRIPT = path.join(process.env.HOME, 'zylos/bin/transcribe');
 const VOICE_ENABLED = fs.existsSync(TRANSCRIBE_SCRIPT);
@@ -490,7 +495,7 @@ bot.on('text', (ctx) => {
 
     const cleanText = mentioned ? replaceBotMention(ctx) : ctx.message.text;
 
-    const endpoint = endpointFromCtx(ctx);
+    const endpoint = endpointFromCtx(ctx, { ownerMention: senderIsOwner && mentioned });
     const correlationId = `${chatId}:${messageId}`;
     const smartNoMention = isSmart && !mentioned;
 
