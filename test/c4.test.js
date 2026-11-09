@@ -49,7 +49,8 @@ fs.writeFileSync(${JSON.stringify(responses)}, JSON.stringify(list));
 if (r.signal) process.kill(process.pid, r.signal);
 if (r.options) fs.writeFileSync(${JSON.stringify(path.join(scriptsDir, 'c4-receive-options.json'))}, JSON.stringify({ options: r.options }));
 if (r.stdout) process.stdout.write(r.stdout);
-process.exit(r.exit);
+// a large write must flush before exit, so end without process.exit()
+if (r.stdoutBytes) { process.stdout.write('x'.repeat(r.stdoutBytes)); process.exitCode = r.exit; } else process.exit(r.exit);
 `);
   fs.writeFileSync(path.join(scriptsDir, 'package.json'), '{"type":"commonjs"}');
 });
@@ -150,6 +151,17 @@ describe('sendToC4', () => {
   it('does not resend after an unstructured failure', async () => {
     writeOptions(SG);
     script({ exit: 2, stdout: 'crash at /some/path/c4-receive.js' }, { exit: 0, stdout: '{"ok":true}' });
+    const r = await send();
+    expect(r.outcome).toBe('uncertain');
+    expect(r.calls).toHaveLength(1);
+    expect(r.replies).toEqual([UNCERTAIN_REPLY]);
+  });
+
+  it('does not resend when c4-receive output exceeds the buffer limit', async () => {
+    // the call is recorded first; more than execFile's 1 MiB default then makes
+    // Node kill it with a string error code, which is not a failed start
+    writeOptions(SG);
+    script({ exit: 0, stdoutBytes: 2 * 1024 * 1024 }, { exit: 0, stdout: '{"ok":true}' });
     const r = await send();
     expect(r.outcome).toBe('uncertain');
     expect(r.calls).toHaveLength(1);
