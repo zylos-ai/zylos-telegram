@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-11
+
 ### Fixed
 - Never deliver an inbound message to C4 twice. c4-receive now runs without
   the 30 s timeout, and a call that ran but returned no structured result
