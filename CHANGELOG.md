@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-11
+
+### Upgrade notes
+- If an agent relies on a username-only DM allowlist entry to send messages
+  proactively (not as a reply), add that user's numeric chat ID to the
+  allowlist before upgrading. After the upgrade, username-only entries no
+  longer authorize proactive DMs, and such sends are refused
+  (`OUTBOUND_DM_DENIED`). Replying to a message the user sends still works.
+
 ### Fixed
 - Never deliver an inbound message to C4 twice. c4-receive now runs without
   the 30 s timeout, and a call that ran but returned no structured result
