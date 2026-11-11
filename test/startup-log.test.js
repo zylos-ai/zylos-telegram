@@ -4,10 +4,16 @@ import os from 'node:os';
 import path from 'node:path';
 
 // Load the real bot entry point with Telegram, HTTP and config replaced, with
-// HOME, ZYLOS_DIR and the data directory in a temp dir, and capture what it
-// logs once launch succeeds. Its SIGTERM handler is kept and run afterwards
+// HOME, ZYLOS_DIR, PM2_HOME, TMPDIR and data in a temp dir, and capture what it
+// logs from onLaunch while polling is still pending. Its SIGTERM handler is run
 // so the bot's own shutdown closes its watcher, intervals and server.
-const state = vi.hoisted(() => ({ dir: '', signals: {} }));
+// Covers entry-point startup wiring with mocked transports. Run when startup
+// logging or launch wiring changes; unrelated message handling can skip it.
+// No network, HTTP listener, tmux or database is used; all files are temporary.
+const state = vi.hoisted(() => ({
+  dir: '', signals: {}, onLaunch: null, launchPromise: null,
+  launchResolved: false, finishLaunch: null, stopped: false,
+}));
 vi.mock('../src/lib/config.js', () => ({
   loadConfig: () => ({ owner: {}, groups: {} }), saveConfig: vi.fn(() => true),
   getEnv: name => name === 'TELEGRAM_BOT_TOKEN' ? 'fixture-token' : '',
@@ -15,31 +21,43 @@ vi.mock('../src/lib/config.js', () => ({
 }));
 vi.mock('http', () => ({ default: { createServer: () => ({ on: vi.fn(), listen: vi.fn(), close: vi.fn() }) } }));
 vi.mock('telegraf', () => ({ Telegraf: class {
-  botInfo = { username: 'fixturebot' };
+  botInfo = undefined;
   telegram = { callApi: async () => ({}) };
   on() {}
   start() {}
   catch() {}
-  launch() { return Promise.resolve(); }
-  stop() {}
+  launch(config, onLaunch) {
+    state.onLaunch = () => {
+      this.botInfo = { username: 'fixturebot' };
+      onLaunch?.();
+    };
+    state.launchPromise = new Promise(resolve => { state.finishLaunch = resolve; });
+    state.launchPromise.then(() => { state.launchResolved = true; });
+    return state.launchPromise;
+  }
+  stop() { state.stopped = true; state.finishLaunch(); }
 } }));
 
 let log, root, prevEnv;
 beforeAll(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-startup-'));
-  prevEnv = { HOME: process.env.HOME, ZYLOS_DIR: process.env.ZYLOS_DIR };
+  prevEnv = Object.fromEntries(['HOME', 'ZYLOS_DIR', 'PM2_HOME', 'TMPDIR'].map(key => [key, process.env[key]]));
   process.env.HOME = path.join(root, 'home');
   process.env.ZYLOS_DIR = path.join(root, 'zylos');
+  process.env.PM2_HOME = path.join(root, 'pm2');
+  process.env.TMPDIR = path.join(root, 'tmp');
+  for (const key of ['HOME', 'ZYLOS_DIR', 'PM2_HOME', 'TMPDIR']) {
+    fs.mkdirSync(process.env[key], { recursive: true });
+  }
   state.dir = path.join(root, 'data');
   fs.mkdirSync(state.dir, { recursive: true });
   vi.useFakeTimers();
   vi.spyOn(process, 'once').mockImplementation((signal, handler) => { state.signals[signal] = handler; return process; });
   log = vi.spyOn(console, 'log');
   await import('../src/bot.js');
-  await vi.waitFor(() => expect(log.mock.calls.some(([line]) => String(line).endsWith(' started'))).toBe(true));
 });
 afterAll(() => {
-  state.signals.SIGTERM();
+  if (!state.stopped) state.signals.SIGTERM?.();
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -48,9 +66,26 @@ afterAll(() => {
 });
 
 describe('startup log', () => {
-  it('reports the version from package.json', () => {
+  it('reports startup details before polling finishes, without repeating them on stop', async () => {
     const { version } = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-    const started = log.mock.calls.map(([line]) => String(line)).filter(line => line.endsWith(' started'));
-    expect(started).toEqual([`[telegram] zylos-telegram v${version} started`]);
+    const details = () => log.mock.calls.map(([line]) => String(line)).filter(line =>
+      line.endsWith(' started') || line.startsWith('[telegram] Proxy:') || line.startsWith('[telegram] Bot:'));
+    expect(details()).toEqual([]);
+    expect(state.launchResolved).toBe(false);
+
+    state.onLaunch();
+    await Promise.resolve();
+    const expected = [
+      `[telegram] zylos-telegram v${version} started`,
+      '[telegram] Proxy: none',
+      '[telegram] Bot: @fixturebot',
+    ];
+    expect(details()).toEqual(expected);
+    expect(state.launchResolved).toBe(false);
+
+    state.signals.SIGTERM();
+    await state.launchPromise;
+    expect(state.launchResolved).toBe(true);
+    expect(details()).toEqual(expected);
   });
 });

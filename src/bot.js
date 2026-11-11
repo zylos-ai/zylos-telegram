@@ -1123,7 +1123,7 @@ bot.catch((err, ctx) => {
  */
 bot.launch({
   allowedUpdates: ['message', 'my_chat_member']
-}).then(() => {
+}, () => {
   console.log(`[telegram] zylos-telegram v${PACKAGE_VERSION} started`);
   console.log(`[telegram] Proxy: ${proxyUrl ? redactUrlCreds(proxyUrl) : 'none'}`);
   console.log(`[telegram] Bot: @${bot.botInfo?.username}`);
