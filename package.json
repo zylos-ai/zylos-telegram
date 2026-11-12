@@ -6,7 +6,7 @@
   "main": "src/bot.js",
   "scripts": {
     "start": "node src/bot.js",
-    "test": "vitest run"
+    "test": "vitest run test/*.test.js"
   },
   "homepage": "https://github.com/zylos-ai/zylos-telegram#readme",
   "bugs": {
