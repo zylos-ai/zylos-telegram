@@ -93,6 +93,17 @@ loadUserCache();
 const cachePersistInterval = startPersistInterval();
 
 /**
+ * Mark a message as received with the eyes reaction (👀).
+ */
+function addEyesReaction(chatId, messageId) {
+  bot.telegram.callApi('setMessageReaction', {
+    chat_id: chatId,
+    message_id: messageId,
+    reaction: [{ type: 'emoji', emoji: '👀' }]
+  }).catch(() => {});
+}
+
+/**
  * Remove eyes reaction from a message (with retry on failure).
  */
 function clearReaction(chatId, messageId) {
@@ -170,15 +181,20 @@ function replaceBotMention(ctx) {
  * @param {string|number} chatId
  * @param {string} correlationId - Unique per request: `${chatId}:${messageId}`
  * @param {number|null} threadId - Optional message_thread_id for forum topics
+ * @param {object} [options]
+ * @param {boolean} [options.typing=true] - false tracks the 👀 reaction for
+ *   cleanup (reply, [SKIP], 120s timeout) without showing "typing…"
  */
-function startTypingIndicator(chatId, correlationId, threadId = null) {
+function startTypingIndicator(chatId, correlationId, threadId = null, { typing = true } = {}) {
   const opts = threadId ? { message_thread_id: threadId } : {};
-  // Immediate first action
-  bot.telegram.sendChatAction(chatId, 'typing', opts).catch(() => {});
-
-  const interval = setInterval(() => {
+  let interval = null;
+  if (typing) {
+    // Immediate first action
     bot.telegram.sendChatAction(chatId, 'typing', opts).catch(() => {});
-  }, 5000);
+    interval = setInterval(() => {
+      bot.telegram.sendChatAction(chatId, 'typing', opts).catch(() => {});
+    }, 5000);
+  }
 
   const [typChatId, typMsgId] = correlationId.split(':');
   const numChatId = Number(typChatId);
@@ -497,15 +513,10 @@ bot.on('text', (ctx) => {
     const correlationId = `${chatId}:${messageId}`;
     const smartNoMention = isSmart && !mentioned;
 
-    // Eyes reaction + typing only when bot will respond (not smart-no-mention)
-    if (!smartNoMention) {
-      bot.telegram.callApi('setMessageReaction', {
-        chat_id: chatId,
-        message_id: messageId,
-        reaction: [{ type: 'emoji', emoji: '👀' }]
-      }).catch(() => {});
-      startTypingIndicator(chatId, correlationId, threadId);
-    }
+    // Eyes reaction on every forwarded message; typing only when the bot is
+    // addressed (smart-no-mention may end in [SKIP], so no "typing…" there)
+    addEyesReaction(chatId, messageId);
+    startTypingIndicator(chatId, correlationId, threadId, { typing: !smartNoMention });
 
     const sendReplyOpts = threadId ? { message_thread_id: threadId } : {};
     const msg = formatMessage({
@@ -665,12 +676,14 @@ bot.on('photo', async (ctx) => {
     return;
   }
 
-  // Not @mentioned in smart group: forward without downloading, no reaction
+  // Not @mentioned in smart group: forward without downloading; eyes reaction, no typing
   if (isSmart) {
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
 
     const endpoint = endpointFromCtx(ctx);
     const correlationId = `${chatId}:${messageId}`;
+    addEyesReaction(chatId, messageId);
+    startTypingIndicator(chatId, correlationId, threadId, { typing: false });
 
     const msg = formatMessage({
       chatType,
@@ -833,12 +846,14 @@ bot.on('document', async (ctx) => {
     return;
   }
 
-  // Not @mentioned in smart group: forward without downloading, no reaction
+  // Not @mentioned in smart group: forward without downloading; eyes reaction, no typing
   if (isSmart) {
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) return;
 
     const endpoint = endpointFromCtx(ctx);
     const correlationId = `${chatId}:${messageId}`;
+    addEyesReaction(chatId, messageId);
+    startTypingIndicator(chatId, correlationId, threadId, { typing: false });
 
     const msg = formatMessage({
       chatType,

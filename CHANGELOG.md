@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Smart-mode groups and topics now add the 👀 reaction to every message the
+  agent receives, not only @mentions, so members can see the agent has read it.
+  The reaction clears when the agent replies, answers `[SKIP]`, Core rejects the
+  message, or after 120 seconds. "Typing…" still shows only for @mentions,
+  because an unmentioned message may end in `[SKIP]`.
+
 ## [0.6.0] - 2026-11-11
 
 ### Upgrade notes
