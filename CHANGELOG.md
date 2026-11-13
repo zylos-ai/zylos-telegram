@@ -7,12 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-13
+
 ### Changed
 - Smart-mode groups and topics now add the 👀 reaction to every message the
   agent receives, not only @mentions, so members can see the agent has read it.
   The reaction clears when the agent replies, answers `[SKIP]`, Core rejects the
   message, or after 120 seconds. "Typing…" still shows only for @mentions,
-  because an unmentioned message may end in `[SKIP]`.
+  because an unmentioned message may end in `[SKIP]` (#85).
+
+### Fixed
+- The startup lines (version, proxy, bot) are logged from Telegraf's
+  `onLaunch` callback when the bot starts. They used to appear only at
+  shutdown, because `bot.launch()` resolves when polling ends (#83).
 
 ## [0.6.0] - 2026-11-11
 
