@@ -40,12 +40,22 @@ const parsed = parseEndpoint(args[0]);
 const chatId = parsed.chatId;
 const triggerMsgId = parsed.msg ? parseInt(parsed.msg, 10) : null;
 const correlationId = parsed.req || null;
-const threadId = parsed.thread ? parseInt(parsed.thread, 10) : null;
+// Forum topic: C4 routes `topic:N` to the topic's session group, so a
+// topic-only endpoint must also be delivered into topic N. When both keys are
+// present they must agree; a mismatch is refused rather than guessed.
+const endpointThread = parsed.thread ? parseInt(parsed.thread, 10) : null;
+const endpointTopic = parsed.topic ? parseInt(parsed.topic, 10) : null;
+const threadId = endpointThread || endpointTopic || null;
 const message = args.slice(1).join(' ');
 let replyOnly = false;
 
 if (!chatId) {
   console.error('Error: invalid endpoint (missing chatId)');
+  process.exit(1);
+}
+
+if (endpointThread && endpointTopic && endpointThread !== endpointTopic) {
+  console.error(`Error: endpoint thread:${parsed.thread} and topic:${parsed.topic} disagree; refusing to send`);
   process.exit(1);
 }
 
