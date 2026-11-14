@@ -273,6 +273,27 @@ describe('group context delivery', () => {
     expect(stored.acknowledged).toBe(4);
   });
 
+  it('keeps pending context untouched when mode changes to single during a media download', async () => {
+    await dispatch(1);
+    let release;
+    state.photoGate = new Promise(resolve => { release = resolve; });
+    const media = state.handlers.photo(ctx(2, { mentioned: true }));
+    try {
+      setMode('single');
+    } finally { release(); }
+    await media;
+    await settled();
+    expect(received()[0]).toBe('[TG GROUP:Fixture group]\n<thread-context>\n[alice]: chat 1\n</thread-context>\n\n<current-message>\nalice said: @Fixture help\n</current-message> ---- file: /isolated/photo');
+    const file = path.join(root, 'zylos/components/telegram/data/context/group-101_t_topic-9.log.json');
+    const stored = JSON.parse(fs.readFileSync(file));
+    expect(stored.acknowledged).toBe(0);
+    expect(stored.entries.map(entry => entry.message_id)).toEqual([1, 2]);
+    setMode('multi');
+    await dispatch(3, { mentioned: true });
+    expect(received()[1]).toContain('[alice]: chat 1');
+    expect(JSON.parse(fs.readFileSync(file)).acknowledged).toBe(3);
+  });
+
   it('keeps progress after delayed media is overtaken by a later mention', async () => {
     let release;
     state.photoGate = new Promise(resolve => { release = resolve; });
