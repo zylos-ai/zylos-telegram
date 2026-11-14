@@ -48,7 +48,7 @@ export function getHistoryLimit(historyKey, config = null) {
 
 /**
  * Record a message into in-memory history.
- * Deduplicates real and synthetic message IDs.
+ * Deduplicates by message_id (skips null/synthetic bot: IDs).
  *
  * @param {string} historyKey - From getHistoryKey()
  * @param {HistoryEntry} entry
@@ -57,11 +57,9 @@ export function recordHistoryEntry(historyKey, entry, config = null) {
   if (!chatHistories.has(historyKey)) chatHistories.set(historyKey, []);
   const history = chatHistories.get(historyKey);
 
-  // Synthetic IDs are stable when the same log entry is replayed.
-  if (entry.message_id != null) {
-    const synthetic = String(entry.message_id).startsWith('bot:');
-    if (history.some(m => m.message_id === entry.message_id && (!synthetic ||
-      (m.timestamp === entry.timestamp && m.text === entry.text)))) return;
+  // Dedup only real message IDs (skip null/synthetic)
+  if (entry.message_id && !String(entry.message_id).startsWith('bot:')) {
+    if (history.some(m => m.message_id === entry.message_id)) return;
   }
 
   history.push(entry);

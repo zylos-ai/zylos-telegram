@@ -6,5 +6,10 @@ const args = process.argv.slice(2);
 fs.appendFileSync(path.join(root, 'received.jsonl'), JSON.stringify(args) + '\n');
 const resultFile = path.join(root, 'result.json');
 const result = fs.existsSync(resultFile) ? JSON.parse(fs.readFileSync(resultFile)) : { ok: true };
-process.stdout.write(JSON.stringify(result));
-process.exitCode = result.ok ? 0 : 1;
+if (result.hold) {
+  // Keep this private receiver unfinished until the test teardown terminates it.
+  process.stdin.resume();
+} else {
+  process.stdout.write(JSON.stringify(result));
+  process.exitCode = result.ok ? 0 : 1;
+}

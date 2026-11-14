@@ -85,6 +85,9 @@ forwarded to that group's session (or forum topic's session). Own replies are
 excluded. The existing `historyLimit` / `message.context_messages` limit still
 applies; an overflow line reports older omitted messages, and each context entry
 is capped at 500 characters. If nothing is pending, no context block is emitted.
+Pending context is consumed synchronously when its message is dispatched. If
+that delivery fails, it is not attached again to a later message; the existing
+delivery-failure notice asks the sender to retry.
 Single-session and unknown-mode instances retain the existing recent-history format.
 
 Policy values are case-sensitive. Invalid hand-edited values may still accept

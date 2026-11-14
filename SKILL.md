@@ -333,7 +333,10 @@ not previously handed to the same group or forum-topic session. Own bot replies
 are excluded. Pending context survives bot restarts under `data/context/`, with
 a bounded tail and an omitted-message count. The existing per-group `historyLimit`
 (or global `message.context_messages`, default 5) applies; entries are capped at
-500 characters. Overflow adds `之前还有 N 条未显示`; empty context emits no tags.
+500 characters. Context is consumed immediately before dispatch; a rejected or
+uncertain delivery does not restore it for a later message, and the existing
+failure notice asks the sender to retry. Each message starts its own C4 receive
+without waiting for an earlier receive to finish. Overflow adds `之前还有 N 条未显示`; empty context emits no tags.
 Single-session, old-Core and unknown-mode instances retain recent logged context.
 Mode is read from Core's `.zylos/config.json`, not its supported CLI options.
 

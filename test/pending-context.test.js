@@ -72,6 +72,21 @@ describe('pending group context', () => {
     expect(next.omittedContextCount).toBe(5);
   });
 
+  it('does not rewind progress when a media message is dispatched after a later mention', () => {
+    const media = entry(1);
+    context.logAndRecord('-101', media, config, key);
+    for (let id = 2; id <= 6; id++) record(id);
+    pending.acknowledgeContext(key, pending.pendingContext(key, 6, 2));
+    const delayed = pending.pendingContext(key, 1, 2, media.contextSequence);
+    expect(delayed.contextMessages).toEqual([]);
+    expect(delayed.omittedContextCount).toBe(0);
+    pending.acknowledgeContext(key, delayed);
+    for (let id = 7; id <= 12; id++) record(id);
+    const next = pending.pendingContext(key, 12, 2);
+    expect(next.contextMessages.map(m => m.message_id)).toEqual([10, 11]);
+    expect(next.omittedContextCount).toBe(3);
+  });
+
   it('isolates session keys and ignores private history', () => {
     record(1);
     pending.recordPending('group-101:topic-9', entry(2), 2);
@@ -100,17 +115,5 @@ describe('pending group context', () => {
     expect(pending.isMultiSession()).toBe(false);
     fs.mkdirSync(configFile);
     expect(pending.isMultiSession()).toBe(false);
-  });
-});
-
-describe('cold-start history replay', () => {
-  it('deduplicates an outgoing synthetic ID recorded before replay in every mode', () => {
-    mode('single');
-    const outgoing = { ...entry('bot:stable'), user_id: 'bot', text: 'approval request' };
-    context.logAndRecord('-101', outgoing, config);
-    context.ensureReplay('-101', config);
-    expect(context.getHistory('-101', null, config).filter(m => m.message_id === 'bot:stable')).toHaveLength(1);
-    context.recordHistoryEntry('-101', { ...outgoing, message_id: 'bot:stable', text: 'second reply' }, config);
-    expect(context.getHistory('-101', null, config).map(m => m.text)).toEqual(['approval request', 'second reply']);
   });
 });

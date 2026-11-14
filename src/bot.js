@@ -1081,6 +1081,7 @@ const internalServer = http.createServer((req, res) => {
         return;
       }
 
+      ensureReplay(getHistoryKey(chatId, threadId || null), config);
       logAndRecord(chatId, {
         timestamp: new Date().toISOString(),
         message_id: `bot:${Date.now()}`,

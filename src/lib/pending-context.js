@@ -23,7 +23,7 @@ function load(key) {
   if (!states.has(key)) {
     let state;
     try { state = JSON.parse(fs.readFileSync(stateFile(key), 'utf8')); } catch {}
-    states.set(key, state || { end: 0, acknowledged: 0, deliveredId: 0, entries: [] });
+    states.set(key, state || { end: 0, acknowledged: 0, entries: [] });
   }
   return states.get(key);
 }
@@ -42,7 +42,6 @@ function save(key, state) {
 export function recordPending(key, entry, limit) {
   if (!isMultiSession() || entry.user_id === 'bot' || !String(key).startsWith('group-')) return;
   const state = load(key);
-  if (entry.message_id <= state.deliveredId) return state.acknowledged;
   const existing = state.entries.find(m => m.message_id === entry.message_id);
   if (existing) return existing.sequence;
   state.end++;
@@ -64,14 +63,12 @@ export function pendingContext(key, currentId, limit, sequence) {
     contextMessages: messages,
     omittedContextCount: Math.max(0, count - messages.length),
     end,
-    deliveredId: Math.max(state.deliveredId, currentId, ...eligible.map(m => m.message_id)),
   };
 }
 
 export function acknowledgeContext(key, snapshot) {
   const state = load(key);
   state.acknowledged = snapshot.end;
-  state.deliveredId = snapshot.deliveredId;
   state.entries = state.entries.filter(m => m.sequence > snapshot.end);
   save(key, state);
 }

@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
-const state = vi.hoisted(() => ({ handlers: {}, signals: {}, deliveries: [], server: null, children: new Set() }));
+const state = vi.hoisted(() => ({ handlers: {}, signals: {}, deliveries: [], server: null, children: new Set(), photoGate: null }));
 vi.mock('node:child_process', async original => {
   const real = await original();
   return { ...real, execFile(...args) {
@@ -27,7 +27,7 @@ vi.mock('http', () => ({ default: { createServer: handler => {
   return { on() {}, listen() {}, close() {} };
 } } }));
 vi.mock('../src/lib/user-cache.js', () => ({ resolveUserName: () => 'alice', loadUserCache() {}, startPersistInterval() {}, persistUserCache() {} }));
-vi.mock('../src/lib/media.js', () => ({ downloadPhoto: async () => '/isolated/photo', downloadDocument: async () => '/isolated/file', downloadVoice: async () => { const file = path.join(process.env.HOME, 'voice'); fs.writeFileSync(file, 'fixture'); return file; } }));
+vi.mock('../src/lib/media.js', () => ({ downloadPhoto: async () => { if (state.photoGate) await state.photoGate; return '/isolated/photo'; }, downloadDocument: async () => '/isolated/file', downloadVoice: async () => { const file = path.join(process.env.HOME, 'voice'); fs.writeFileSync(file, 'fixture'); return file; } }));
 vi.mock('../src/lib/c4.js', async original => {
   const real = await original();
   return { ...real, sendToC4(...args) {
@@ -70,6 +70,7 @@ beforeEach(async () => {
   fs.writeFileSync(path.join(scripts, 'package.json'), '{"type":"commonjs"}');
   fs.writeFileSync(path.join(scripts, 'c4-receive-options.json'), JSON.stringify({ options: { '--session-group': {} } }));
   state.deliveries = [];
+  state.photoGate = null;
   vi.spyOn(process, 'once').mockImplementation((signal, handler) => { state.signals[signal] = handler; return process; });
   // No tmux, PM2, or database is used. All filesystem and child-process paths are private.
   console.log('isolated instance', { HOME: root, ZYLOS_DIR: process.env.ZYLOS_DIR, PM2_HOME: process.env.PM2_HOME, TMPDIR: process.env.TMPDIR, receiver: scripts });
@@ -94,7 +95,7 @@ function ctx(id, { mentioned = false, topic = 9, forum = true } = {}) {
       photo: [{ file_id: 'photo' }], document: { file_id: 'doc', file_name: 'notes.txt' } }, reply: async () => ({}) };
 }
 async function settled() {
-  // The wrapper observes completion of every real child, including queued sends.
+  // The wrapper observes completion of every real child, including overlapping sends.
   for (let index = 0; index < state.deliveries.length; index++) await state.deliveries[index];
 }
 async function dispatch(id, options, kind = 'text') { await state.handlers[kind](ctx(id, options)); await settled(); }
@@ -146,14 +147,21 @@ describe('group context delivery', () => {
     console.log('ACCEPTANCE legacy', mode, received());
   });
 
-  it('keeps one outgoing record when outgoing recording precedes cold replay after restart', async () => {
+  it('replays a full log tail before recording an outgoing reply after restart', async () => {
     setMode('single');
+    const historyConfig = cfg('mention');
+    historyConfig.groups['-101'].historyLimit = 5;
+    fs.writeFileSync(configFile, JSON.stringify(historyConfig));
+    for (let id = 1; id <= 9; id++) await dispatch(id);
     state.signals.SIGTERM();
     await boot();
     outgoing();
-    await dispatch(1, { mentioned: true });
-    const message = received()[0];
-    expect(message.split('[fixturebot]: approval request')).toHaveLength(2);
+    await dispatch(11, { mentioned: true });
+    await dispatch(12, { mentioned: true });
+    const first = received()[0], next = received()[1];
+    expect(first).toContain('<thread-context>\n[alice]: chat 6\n[alice]: chat 7\n[alice]: chat 8\n[alice]: chat 9\n[fixturebot]: approval request\n</thread-context>');
+    expect(next).toContain('<thread-context>\n[alice]: chat 7\n[alice]: chat 8\n[alice]: chat 9\n[fixturebot]: approval request\n[alice]: @fixturebot help\n</thread-context>');
+    for (const message of [first, next]) expect(message.split('[fixturebot]: approval request')).toHaveLength(2);
     console.log('ACCEPTANCE restart', received());
   });
 
@@ -195,7 +203,7 @@ describe('group context delivery', () => {
     expect(received()[1]).not.toContain('chat 3');
   });
 
-  it('serializes overlapping sends so already included messages are not repeated as context', async () => {
+  it('dispatches overlapping messages immediately without repeating context', async () => {
     fs.writeFileSync(configFile, JSON.stringify(cfg('smart')));
     state.handlers.text(ctx(1)); state.handlers.text(ctx(2)); state.handlers.text(ctx(3));
     await settled();
@@ -203,15 +211,41 @@ describe('group context delivery', () => {
     for (const message of received()) expect(message).not.toContain('<thread-context>');
   });
 
-  it('keeps pending context after a known rejection and consumes a committed rejection', async () => {
-    await dispatch(1);
-    fs.writeFileSync(path.join(root, 'result.json'), JSON.stringify({ ok: false, error: { code: 'REJECTED', message: 'fixture', persisted: [] } }));
-    await dispatch(2, { mentioned: true });
-    fs.writeFileSync(path.join(root, 'result.json'), JSON.stringify({ ok: false, error: { code: 'NOTICE_FAILED', message: 'fixture', persisted: ['1'] } }));
-    await dispatch(3, { mentioned: true });
-    expect(received()[1]).toContain('[alice]: chat 1');
+  it('dispatches the next message while a preceding receiver remains unfinished', async () => {
+    fs.writeFileSync(configFile, JSON.stringify(cfg('smart')));
+    fs.writeFileSync(path.join(root, 'result.json'), JSON.stringify({ ok: true, hold: true }));
+    state.handlers.text(ctx(1));
+    await vi.waitFor(() => expect(received()).toHaveLength(1));
+    expect(state.children.size).toBe(1);
     fs.writeFileSync(path.join(root, 'result.json'), '{"ok":true}');
-    await dispatch(4, { mentioned: true });
-    expect(received()[2]).not.toContain('<thread-context>');
+    state.handlers.text(ctx(2));
+    await vi.waitFor(() => expect(received()).toHaveLength(2));
+    expect(received()[1]).not.toContain('<thread-context>');
+    // Teardown kills/reaps the held private child; no production receiver is used.
+  });
+
+  it('keeps progress after delayed media is overtaken by a later mention', async () => {
+    let release;
+    state.photoGate = new Promise(resolve => { release = resolve; });
+    const media = state.handlers.photo(ctx(1, { mentioned: true }));
+    try {
+      await dispatch(2, { mentioned: true });
+    } finally { release(); }
+    await media;
+    await settled();
+    expect(received()[1]).not.toContain('<thread-context>');
+    for (let id = 3; id <= 8; id++) await dispatch(id);
+    await dispatch(9, { mentioned: true });
+    expect(received()[2]).toContain('之前还有 4 条未显示\n[alice]: chat 7\n[alice]: chat 8');
+  });
+
+  it.each([[[]], [null], [['1']]])('consumes context at dispatch even when the receive outcome has persisted=%j', async persisted => {
+    await dispatch(1);
+    fs.writeFileSync(path.join(root, 'result.json'), JSON.stringify({ ok: false, error: { code: 'REJECTED', message: 'fixture', persisted } }));
+    await dispatch(2, { mentioned: true });
+    expect(received()[0]).toContain('[alice]: chat 1');
+    fs.writeFileSync(path.join(root, 'result.json'), '{"ok":true}');
+    await dispatch(3, { mentioned: true });
+    expect(received()[1]).not.toContain('<thread-context>');
   });
 });
