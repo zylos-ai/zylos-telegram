@@ -1,6 +1,6 @@
 ---
 name: telegram
-version: 0.7.0
+version: 0.7.1
 description: >-
   Telegram Bot communication channel (long polling mode, works behind firewalls).
   Use when: (1) replying to Telegram messages (DM or group @mentions),

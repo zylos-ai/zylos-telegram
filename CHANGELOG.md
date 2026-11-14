@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-14
+
+### Fixed
+- Multi-session mode: the `<thread-context>` attached to a group or forum-topic
+  message now contains only group messages that appeared since the last message
+  handed to the agent, and never the agent's own replies. Previously every
+  hand-off repeated context the agent had already seen. History limits, the
+  500-character entry cap, omitted-message counts and empty-context behaviour
+  are unchanged; single-session and unknown-mode dispatch keep the old format.
+  After a restart, old logs are replayed before outgoing replies are recorded,
+  so restarts do not bring back duplicates (#89).
+- Messages sent to a topic-only endpoint (`<chat>|topic:N`, without `thread`)
+  are delivered into that forum topic instead of the group's General topic (#88).
+
 ## [0.7.0] - 2026-11-13
 
 ### Changed
