@@ -52,7 +52,7 @@ export function recordPending(key, entry, limit) {
 
 export function pendingContext(key, currentId, limit, currentSequence) {
   const state = load(key);
-  const end = Math.max(state.acknowledged, currentSequence);
+  const end = Math.max(state.acknowledged, currentSequence ?? state.end);
   const eligible = state.entries.filter(m => m.sequence <= end);
   const messages = eligible.filter(m => m.message_id !== currentId).slice(-limit);
   const count = end - state.acknowledged - (currentSequence > state.acknowledged ? 1 : 0);

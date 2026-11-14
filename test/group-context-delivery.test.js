@@ -262,7 +262,7 @@ describe('group context delivery', () => {
     } finally { release(); }
     await media;
     await settled();
-    expect(received()[0]).toContain('[alice]: chat 1');
+    expect(received()[0]).not.toContain('<thread-context>');
     for (const id of [3, 5]) {
       await dispatch(id);
       await dispatch(id + 1, { mentioned: true });
