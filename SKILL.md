@@ -328,9 +328,14 @@ history; this section only describes how to use it for ID resolution.
 
 ## Group Context
 
-When responding to @mentions in groups, the bot includes recent message context
-so Claude understands the conversation. Context is retrieved from logged messages
-since the last response.
+With Core `session_mode: multi`, forwarded group messages include only context
+not previously handed to the same group or forum-topic session. Own bot replies
+are excluded. Pending context survives bot restarts under `data/context/`, with
+a bounded tail and an omitted-message count. The existing per-group `historyLimit`
+(or global `message.context_messages`, default 5) applies; entries are capped at
+500 characters. Overflow adds `之前还有 N 条未显示`; empty context emits no tags.
+Single-session, old-Core and unknown-mode instances retain recent logged context.
+Mode is read from Core's `.zylos/config.json`, not its supported CLI options.
 
 Configuration in `config.json`:
 ```json

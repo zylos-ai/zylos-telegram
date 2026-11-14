@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { DATA_DIR, loadConfig } from './config.js';
 import { getHistoryKey, historyKeyToLogFile, escapeXml } from './utils.js';
+import { recordPending } from './pending-context.js';
 
 const LOGS_DIR = path.join(DATA_DIR, 'logs');
 fs.mkdirSync(LOGS_DIR, { recursive: true });
@@ -37,7 +38,7 @@ const _replayedKeys = new Set();
  * @param {string} historyKey
  * @returns {number}
  */
-function getHistoryLimit(historyKey, config = null) {
+export function getHistoryLimit(historyKey, config = null) {
   const cfg = config || loadConfig();
   // historyKey is either "chatId" or "chatId:threadId" - extract chatId
   const chatId = historyKey.includes(':') ? historyKey.split(':')[0] : historyKey;
@@ -47,7 +48,7 @@ function getHistoryLimit(historyKey, config = null) {
 
 /**
  * Record a message into in-memory history.
- * Deduplicates by message_id (skips null/synthetic bot: IDs).
+ * Deduplicates real and synthetic message IDs.
  *
  * @param {string} historyKey - From getHistoryKey()
  * @param {HistoryEntry} entry
@@ -56,9 +57,11 @@ export function recordHistoryEntry(historyKey, entry, config = null) {
   if (!chatHistories.has(historyKey)) chatHistories.set(historyKey, []);
   const history = chatHistories.get(historyKey);
 
-  // Dedup only real message IDs (skip null/synthetic)
-  if (entry.message_id && !String(entry.message_id).startsWith('bot:')) {
-    if (history.some(m => m.message_id === entry.message_id)) return;
+  // Synthetic IDs are stable when the same log entry is replayed.
+  if (entry.message_id != null) {
+    const synthetic = String(entry.message_id).startsWith('bot:');
+    if (history.some(m => m.message_id === entry.message_id && (!synthetic ||
+      (m.timestamp === entry.timestamp && m.text === entry.text)))) return;
   }
 
   history.push(entry);
@@ -160,7 +163,7 @@ export function ensureReplay(historyKey, config = null) {
  * @param {string} chatId
  * @param {HistoryEntry} entry - Must include thread_id field
  */
-export function logAndRecord(chatId, entry, config = null) {
+export function logAndRecord(chatId, entry, config = null, sessionKey = null) {
   chatId = String(chatId);
   const hk = getHistoryKey(chatId, entry.thread_id || null);
 
@@ -174,6 +177,9 @@ export function logAndRecord(chatId, entry, config = null) {
 
   // In-memory history
   recordHistoryEntry(hk, entry, config);
+  if (sessionKey) {
+    entry.contextSequence = recordPending(sessionKey, entry, getHistoryLimit(hk, config));
+  }
 }
 
 // ============================================================
@@ -198,7 +204,7 @@ export function formatMessage(opts) {
   const {
     chatType, groupName, userName, text,
     contextMessages, quotedContent, mediaPath, isThread,
-    smartHint
+    smartHint, omittedContextCount = 0
   } = opts;
 
   // Prefix
@@ -212,12 +218,13 @@ export function formatMessage(opts) {
   const parts = [`${prefix}\n`];
 
   // Context (group or thread)
-  if (contextMessages && contextMessages.length > 0) {
+  if (contextMessages?.length > 0 || omittedContextCount > 0) {
     const tag = isThread ? 'thread-context' : 'group-context';
-    const contextLines = contextMessages.map(m =>
+    const contextLines = (contextMessages || []).map(m =>
       `[${escapeXml(m.user_name || String(m.user_id))}]: ${escapeXml(m.text)}`
     ).join('\n');
-    parts.push(`<${tag}>\n${contextLines}\n</${tag}>\n\n`);
+    const omitted = omittedContextCount > 0 ? `之前还有 ${omittedContextCount} 条未显示\n` : '';
+    parts.push(`<${tag}>\n${omitted}${contextLines}\n</${tag}>\n\n`);
   }
 
   // Reply-to

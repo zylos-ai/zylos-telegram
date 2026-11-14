@@ -1,0 +1,116 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+let root, pending, context, configFile;
+const config = { groups: { '-101': { historyLimit: 2 } } };
+const entry = (id, text = `message ${id}`) => ({ message_id: id, user_id: 123, user_name: 'alice', text, thread_id: null });
+const key = 'group-101';
+const mode = value => fs.writeFileSync(configFile, JSON.stringify({ session_mode: value }));
+
+beforeEach(async () => {
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-pending-'));
+  vi.stubEnv('HOME', root);
+  vi.stubEnv('ZYLOS_DIR', path.join(root, 'zylos'));
+  configFile = path.join(root, 'zylos/.zylos/config.json');
+  fs.mkdirSync(path.dirname(configFile), { recursive: true });
+  mode('multi');
+  vi.resetModules();
+  pending = await import('../src/lib/pending-context.js');
+  context = await import('../src/lib/context.js');
+});
+afterEach(() => { vi.unstubAllEnvs(); fs.rmSync(root, { recursive: true, force: true }); });
+
+function record(id, text) { context.logAndRecord('-101', entry(id, text), config, key); }
+
+describe('pending group context', () => {
+  it('counts all omitted messages while retaining only a bounded tail and truncating each text', () => {
+    for (let id = 1; id <= 10; id++) record(id, id === 9 ? 'x'.repeat(700) : undefined);
+    const snapshot = pending.pendingContext(key, 10, 2);
+    expect(snapshot.contextMessages.map(m => m.message_id)).toEqual([8, 9]);
+    expect(snapshot.contextMessages[1].text).toHaveLength(500);
+    expect(snapshot.omittedContextCount).toBe(7);
+    const stored = JSON.parse(fs.readFileSync(path.join(root, 'zylos/components/telegram/data/context/group-101.log.json')));
+    expect(stored.entries).toHaveLength(3);
+  });
+
+  it('excludes own replies and acknowledges only the snapshot, retaining arrivals during delivery', () => {
+    record(1); record(2);
+    context.logAndRecord('-101', { ...entry('bot:answer'), user_id: 'bot' }, config, key);
+    const snapshot = pending.pendingContext(key, 2, 2);
+    record(3);
+    pending.acknowledgeContext(key, snapshot);
+    record(4);
+    expect(pending.pendingContext(key, 4, 2).contextMessages.map(m => m.message_id)).toEqual([3]);
+  });
+
+  it('keeps pending counts and acknowledged progress after a module restart without replaying seen logs', async () => {
+    record(1); record(2);
+    pending.acknowledgeContext(key, pending.pendingContext(key, 2, 2));
+    record(3); record(4); record(5); record(6);
+    vi.resetModules();
+    pending = await import('../src/lib/pending-context.js');
+    context = await import('../src/lib/context.js');
+    context.ensureReplay('-101', config);
+    const snapshot = pending.pendingContext(key, 6, 2);
+    expect(snapshot.contextMessages.map(m => m.message_id)).toEqual([4, 5]);
+    expect(snapshot.omittedContextCount).toBe(1);
+  });
+
+  it('keeps the original boundary when later chatter evicts a downloading media entry', () => {
+    const media = entry(1);
+    context.logAndRecord('-101', media, config, key);
+    for (let id = 2; id <= 8; id++) record(id);
+    const snapshot = pending.pendingContext(key, 1, 2, media.contextSequence);
+    expect(snapshot.contextMessages).toEqual([]);
+    expect(snapshot.omittedContextCount).toBe(0);
+    pending.acknowledgeContext(key, snapshot);
+    record(9);
+    const next = pending.pendingContext(key, 9, 2);
+    expect(next.contextMessages.map(m => m.message_id)).toEqual([7, 8]);
+    expect(next.omittedContextCount).toBe(5);
+  });
+
+  it('isolates session keys and ignores private history', () => {
+    record(1);
+    pending.recordPending('group-101:topic-9', entry(2), 2);
+    pending.recordPending('dm-123', entry(3), 2);
+    expect(pending.pendingContext(key, 9, 2).contextMessages.map(m => m.message_id)).toEqual([1]);
+    expect(pending.pendingContext('group-101:topic-9', 9, 2).contextMessages.map(m => m.message_id)).toEqual([2]);
+    expect(pending.pendingContext('dm-123', 9, 2).contextMessages).toEqual([]);
+  });
+
+  it.each(['single', 'dual', null, 1])('uses legacy behavior for mode %j even with session-group support advertised', value => {
+    mode(value);
+    const scripts = path.join(root, 'zylos/.claude/skills/comm-bridge/scripts');
+    fs.mkdirSync(scripts, { recursive: true });
+    fs.writeFileSync(path.join(scripts, 'c4-receive-options.json'), JSON.stringify({ options: { '--session-group': {} } }));
+    expect(pending.isMultiSession()).toBe(false);
+    record(1);
+    expect(pending.pendingContext(key, 2, 2).contextMessages).toEqual([]);
+  });
+
+  it('uses legacy behavior when mode is absent, unreadable, or invalid JSON', () => {
+    for (const content of ['{}', '{']) {
+      fs.writeFileSync(configFile, content);
+      expect(pending.isMultiSession()).toBe(false);
+    }
+    fs.unlinkSync(configFile);
+    expect(pending.isMultiSession()).toBe(false);
+    fs.mkdirSync(configFile);
+    expect(pending.isMultiSession()).toBe(false);
+  });
+});
+
+describe('cold-start history replay', () => {
+  it('deduplicates an outgoing synthetic ID recorded before replay in every mode', () => {
+    mode('single');
+    const outgoing = { ...entry('bot:stable'), user_id: 'bot', text: 'approval request' };
+    context.logAndRecord('-101', outgoing, config);
+    context.ensureReplay('-101', config);
+    expect(context.getHistory('-101', null, config).filter(m => m.message_id === 'bot:stable')).toHaveLength(1);
+    context.recordHistoryEntry('-101', { ...outgoing, message_id: 'bot:stable', text: 'second reply' }, config);
+    expect(context.getHistory('-101', null, config).map(m => m.text)).toEqual(['approval request', 'second reply']);
+  });
+});

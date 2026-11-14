@@ -80,6 +80,13 @@ full reply endpoint unchanged. These exceptions require an original message to
 reply to; they do not allow proactive sends. Missing logs deny exceptional replies.
 Group replies are visible to everyone in the group.
 
+With Core `session_mode: multi`, context includes only group messages not yet
+forwarded to that group's session (or forum topic's session). Own replies are
+excluded. The existing `historyLimit` / `message.context_messages` limit still
+applies; an overflow line reports older omitted messages, and each context entry
+is capped at 500 characters. If nothing is pending, no context block is emitted.
+Single-session and unknown-mode instances retain the existing recent-history format.
+
 Policy values are case-sensitive. Invalid hand-edited values may still accept
 inbound messages. Outbound checks reuse the same fallback: the owner remains
 allowed, and unknown policies use the DM/group allowlist.

@@ -16,7 +16,9 @@ import { loadConfig, getEnv, DATA_DIR } from './lib/config.js';
 import { getHistoryKey } from './lib/utils.js';
 import { getReplyToContext } from './lib/reply.js';
 import { endpointFromCtx } from './lib/endpoint.js';
+import { sessionGroupFromEndpoint } from './lib/session-group.js';
 import { sendToC4 } from './lib/c4.js';
+import { sendGroupToC4 } from './lib/group-delivery.js';
 import {
   hasOwner, bindOwner, isDmAllowed, isOwner,
   isGroupAllowed, isSmartGroup, isSenderAllowed,
@@ -25,7 +27,7 @@ import {
 import { downloadPhoto, downloadDocument, downloadVoice } from './lib/media.js';
 import { redactUrlCreds } from './lib/redact.js';
 import {
-  logAndRecord, ensureReplay, getHistory,
+  logAndRecord, ensureReplay,
   formatMessage
 } from './lib/context.js';
 import {
@@ -467,7 +469,7 @@ bot.on('text', (ctx) => {
     ensureReplay(getHistoryKey(chatId, threadId), config);
 
     if (isAllowed) {
-      logAndRecord(chatId, logEntry, config);
+      logAndRecord(chatId, logEntry, config, sessionGroupFromEndpoint(endpointFromCtx(ctx)));
     }
 
     const policy = config.groupPolicy || 'allowlist';
@@ -499,11 +501,9 @@ bot.on('text', (ctx) => {
 
     // Log owner messages from non-allowed groups only when responding
     if (!isAllowed && senderIsOwner) {
-      logAndRecord(chatId, logEntry, config);
+      logAndRecord(chatId, logEntry, config, sessionGroupFromEndpoint(endpointFromCtx(ctx)));
     }
 
-    const historyKey = getHistoryKey(chatId, threadId);
-    const contextMessages = getHistory(historyKey, messageId, config);
     const quotedContent = getReplyToContext(ctx.message);
     const groupName = getGroupName(config, chatId, ctx.chat.title);
 
@@ -519,18 +519,16 @@ bot.on('text', (ctx) => {
     startTypingIndicator(chatId, correlationId, threadId, { typing: !smartNoMention });
 
     const sendReplyOpts = threadId ? { message_thread_id: threadId } : {};
-    const msg = formatMessage({
+    sendGroupToC4(endpoint, {
       chatType,
       groupName,
       userName,
       text: cleanText || ctx.message.text,
-      contextMessages,
       quotedContent,
       mediaPath: null,
       isThread: !!threadId,
       smartHint: smartNoMention
-    });
-    sendToC4('telegram', endpoint, msg, (errMsg) => {
+    }, { historyKey: getHistoryKey(chatId, threadId), messageId, config, sequence: logEntry.contextSequence }, (errMsg) => {
       stopTypingIndicator(correlationId);
       clearReaction(chatId, messageId);
       if (errMsg) bot.telegram.sendMessage(chatId, errMsg, sendReplyOpts).catch(() => {});
@@ -631,7 +629,7 @@ bot.on('photo', async (ctx) => {
     text: logText,
     thread_id: threadId
   };
-  logAndRecord(chatId, logEntry, config);
+  logAndRecord(chatId, logEntry, config, sessionGroupFromEndpoint(endpointFromCtx(ctx)));
 
   // Smart/mention groups: only download when @mentioned in caption
   if (isBotMentioned(ctx)) {
@@ -654,17 +652,15 @@ bot.on('photo', async (ctx) => {
       }).catch(() => {});
       startTypingIndicator(chatId, correlationId, threadId);
 
-      const msg = formatMessage({
+      sendGroupToC4(endpoint, {
         chatType,
         groupName: getGroupName(config, chatId, ctx.chat.title),
         userName,
         text: caption ? replaceBotMention(ctx) : '[sent a photo]',
-        contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
         quotedContent: getReplyToContext(ctx.message),
         mediaPath: localPath,
         isThread: !!threadId
-      });
-      sendToC4('telegram', endpoint, msg, (errMsg) => {
+      }, { historyKey: getHistoryKey(chatId, threadId), messageId, config, sequence: logEntry.contextSequence }, (errMsg) => {
         stopTypingIndicator(correlationId);
         clearReaction(chatId, messageId);
         if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
@@ -685,18 +681,16 @@ bot.on('photo', async (ctx) => {
     addEyesReaction(chatId, messageId);
     startTypingIndicator(chatId, correlationId, threadId, { typing: false });
 
-    const msg = formatMessage({
+    sendGroupToC4(endpoint, {
       chatType,
       groupName: getGroupName(config, chatId, ctx.chat.title),
       userName,
       text: caption ? `${caption}\n${photoInfo}` : `[sent a photo]\n${photoInfo}`,
-      contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
       quotedContent: getReplyToContext(ctx.message),
       mediaPath: null,
       isThread: !!threadId,
       smartHint: true
-    });
-    sendToC4('telegram', endpoint, msg, (errMsg) => {
+    }, { historyKey: getHistoryKey(chatId, threadId), messageId, config, sequence: logEntry.contextSequence }, (errMsg) => {
       stopTypingIndicator(correlationId);
       clearReaction(chatId, messageId);
       if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
@@ -801,7 +795,7 @@ bot.on('document', async (ctx) => {
     text: logText,
     thread_id: threadId
   };
-  logAndRecord(chatId, logEntry, config);
+  logAndRecord(chatId, logEntry, config, sessionGroupFromEndpoint(endpointFromCtx(ctx)));
 
   // Smart/mention groups: only download when @mentioned in caption
   if (isBotMentioned(ctx)) {
@@ -824,17 +818,15 @@ bot.on('document', async (ctx) => {
       }).catch(() => {});
       startTypingIndicator(chatId, correlationId, threadId);
 
-      const msg = formatMessage({
+      sendGroupToC4(endpoint, {
         chatType,
         groupName: getGroupName(config, chatId, ctx.chat.title),
         userName,
         text: caption ? replaceBotMention(ctx) : `[sent a file: ${fileName}]`,
-        contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
         quotedContent: getReplyToContext(ctx.message),
         mediaPath: localPath,
         isThread: !!threadId
-      });
-      sendToC4('telegram', endpoint, msg, (errMsg) => {
+      }, { historyKey: getHistoryKey(chatId, threadId), messageId, config, sequence: logEntry.contextSequence }, (errMsg) => {
         stopTypingIndicator(correlationId);
         clearReaction(chatId, messageId);
         if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
@@ -855,18 +847,16 @@ bot.on('document', async (ctx) => {
     addEyesReaction(chatId, messageId);
     startTypingIndicator(chatId, correlationId, threadId, { typing: false });
 
-    const msg = formatMessage({
+    sendGroupToC4(endpoint, {
       chatType,
       groupName: getGroupName(config, chatId, ctx.chat.title),
       userName,
       text: caption ? `${caption}\n${fileInfo}` : `[sent a file: ${fileName}]\n${fileInfo}`,
-      contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
       quotedContent: getReplyToContext(ctx.message),
       mediaPath: null,
       isThread: !!threadId,
       smartHint: true
-    });
-    sendToC4('telegram', endpoint, msg, (errMsg) => {
+    }, { historyKey: getHistoryKey(chatId, threadId), messageId, config, sequence: logEntry.contextSequence }, (errMsg) => {
       stopTypingIndicator(correlationId);
       clearReaction(chatId, messageId);
       if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
@@ -976,7 +966,7 @@ bot.on('voice', async (ctx) => {
     text: '[voice message]',
     thread_id: threadId
   };
-  logAndRecord(chatId, logEntry, config);
+  logAndRecord(chatId, logEntry, config, sessionGroupFromEndpoint(endpointFromCtx(ctx)));
 
   // Only process voice when @mentioned in group/smart-group
   if (!isBotMentioned(ctx)) {
@@ -1029,18 +1019,16 @@ bot.on('voice', async (ctx) => {
 
   const endpoint = endpointFromCtx(ctx);
   const correlationId = `${chatId}:${messageId}`;
-  const msg = formatMessage({
+  sendGroupToC4(endpoint, {
     chatType,
     groupName: getGroupName(config, chatId, ctx.chat.title),
     userName,
     text: `[Voice] ${transcript}`,
-    contextMessages: getHistory(getHistoryKey(chatId, threadId), messageId, config),
     quotedContent: getReplyToContext(ctx.message),
     mediaPath: null,
     isThread: !!threadId,
     smartHint: false
-  });
-  sendToC4('telegram', endpoint, msg, (errMsg) => {
+  }, { historyKey: getHistoryKey(chatId, threadId), messageId, config, sequence: logEntry.contextSequence }, (errMsg) => {
     stopTypingIndicator(correlationId);
     clearReaction(chatId, messageId);
     if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
