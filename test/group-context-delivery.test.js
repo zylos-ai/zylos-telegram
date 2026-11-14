@@ -251,6 +251,28 @@ describe('group context delivery', () => {
     // Teardown kills/reaps the held private child; no production receiver is used.
   });
 
+  it('keeps later incremental context when mode changes during a media download', async () => {
+    setMode('single');
+    await dispatch(1);
+    let release;
+    state.photoGate = new Promise(resolve => { release = resolve; });
+    const media = state.handlers.photo(ctx(2, { mentioned: true }));
+    try {
+      setMode('multi');
+    } finally { release(); }
+    await media;
+    await settled();
+    expect(received()[0]).toContain('[alice]: chat 1');
+    for (const id of [3, 5]) {
+      await dispatch(id);
+      await dispatch(id + 1, { mentioned: true });
+      expect(received()[(id - 1) / 2]).toContain(`[alice]: chat ${id}`);
+    }
+    const file = path.join(root, 'zylos/components/telegram/data/context/group-101_t_topic-9.log.json');
+    const stored = JSON.parse(fs.readFileSync(file));
+    expect(stored.acknowledged).toBe(4);
+  });
+
   it('keeps progress after delayed media is overtaken by a later mention', async () => {
     let release;
     state.photoGate = new Promise(resolve => { release = resolve; });

@@ -6,7 +6,7 @@ import { isMultiSession, pendingContext, acknowledgeContext } from './pending-co
 
 
 export function sendGroupToC4(endpoint, opts, { historyKey, messageId, config, sequence }, onReject) {
-  if (!isMultiSession()) {
+  if (!isMultiSession() || sequence === undefined) {
     sendToC4('telegram', endpoint, formatMessage({ ...opts,
       contextMessages: getHistory(historyKey, messageId, config) }), onReject);
     return;
