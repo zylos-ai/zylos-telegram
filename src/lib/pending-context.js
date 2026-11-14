@@ -40,10 +40,8 @@ function save(key, state) {
 }
 
 export function recordPending(key, entry, limit) {
-  if (!isMultiSession() || entry.user_id === 'bot' || !String(key).startsWith('group-')) return;
+  if (!isMultiSession() || !String(key).startsWith('group-')) return;
   const state = load(key);
-  const existing = state.entries.find(m => m.message_id === entry.message_id);
-  if (existing) return existing.sequence;
   state.end++;
   state.entries.push({ ...entry, text: entry.text.substring(0, 500), sequence: state.end });
   // One extra slot lets selection exclude the current message without losing context.
@@ -52,9 +50,8 @@ export function recordPending(key, entry, limit) {
   return state.end;
 }
 
-export function pendingContext(key, currentId, limit, sequence) {
+export function pendingContext(key, currentId, limit, currentSequence) {
   const state = load(key);
-  const currentSequence = sequence ?? state.entries.find(m => m.message_id === currentId)?.sequence ?? state.end;
   const end = Math.max(state.acknowledged, currentSequence);
   const eligible = state.entries.filter(m => m.sequence <= end);
   const messages = eligible.filter(m => m.message_id !== currentId).slice(-limit);
