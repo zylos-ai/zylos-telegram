@@ -147,6 +147,33 @@ describe('group context delivery', () => {
     console.log('ACCEPTANCE legacy', mode, received());
   });
 
+  it.each(['single', 'multi'])('replays a short log before recording an outgoing reply after restart in %s mode', async mode => {
+    setMode(mode);
+    const historyConfig = cfg('mention');
+    historyConfig.groups['-101'].historyLimit = 5;
+    fs.writeFileSync(configFile, JSON.stringify(historyConfig));
+    await dispatch(1);
+    await dispatch(2);
+    state.signals.SIGTERM();
+    await boot();
+    outgoing();
+    await dispatch(3, { mentioned: true });
+    const { getHistory } = await import('../src/lib/context.js');
+    // Short logs keep an erroneously pre-recorded synthetic reply in memory;
+    // a full tail can truncate it and hide the replay-before-record regression.
+    expect(getHistory('-101:9', 3, historyConfig).map(entry => entry.text))
+      .toEqual(['chat 1', 'chat 2', 'approval request']);
+    const message = received()[0];
+    if (mode === 'single') {
+      expect(message).toContain('<thread-context>\n[alice]: chat 1\n[alice]: chat 2\n[fixturebot]: approval request\n</thread-context>');
+      expect(message.split('[fixturebot]: approval request')).toHaveLength(2);
+    } else {
+      expect(message).toContain('<thread-context>\n[alice]: chat 1\n[alice]: chat 2\n</thread-context>');
+      expect(message).not.toContain('approval request');
+    }
+    console.log('ACCEPTANCE short-log restart', mode, message);
+  });
+
   it('replays a full log tail before recording an outgoing reply after restart', async () => {
     setMode('single');
     const historyConfig = cfg('mention');
