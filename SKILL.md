@@ -326,6 +326,57 @@ chats, no log entry exists yet. In that case:
 `logs/<chatId>.log` is also the source of truth for in-group message
 history; this section only describes how to use it for ID resolution.
 
+## Forum Topic State
+
+Use the component command to inspect known topics or close/reopen them:
+
+```bash
+node ~/zylos/.claude/skills/telegram/scripts/topics.js list --chat -1001234567890
+node ~/zylos/.claude/skills/telegram/scripts/topics.js list --chat -1001234567890 --state open
+node ~/zylos/.claude/skills/telegram/scripts/topics.js close --chat -1001234567890 --topic 42
+node ~/zylos/.claude/skills/telegram/scripts/topics.js reopen --chat -1001234567890 --topic 42
+```
+
+Results are JSON. `list` returns `{ "topics": [...] }`; each topic has
+`chat_id`, `topic_id`, `name`, `state`, `updated_at` (UTC ISO timestamp), and
+`actor` (Telegram User or Chat, or null for an unknown seed actor). General uses
+topic ID 1. A first rename event leaves state null; a close/reopen without a
+known name leaves name null. Never treat missing or null state as open.
+
+The component records create, rename, close and reopen service messages for
+groups allowed by `groupPolicy`. Sender `allowFrom` restricts conversations,
+not observation of topic state: an administrator's closure must be recorded
+even when that administrator cannot trigger the agent. These events never go
+to C4 or conversational history. Config changes apply through the existing hot reload.
+
+Telegram has no topic-state query API. This history is observational: events
+before installation, downtime beyond Telegram's update retention, or operations
+outside this component may leave gaps. Missing history returns an empty list
+with a warning; damaged history returns an error and nonzero exit. Neither
+blocks bot startup or ordinary messages. Topic history is an append-only journal
+at `data/topics.jsonl` in the component data directory, preserved on upgrades.
+
+Use `topics.js close|reopen` instead of raw Bot API calls: successful operations
+are recorded immediately, even before the service update arrives. Telegram's
+server permits outgoing topic service updates ([source](https://github.com/tdlib/telegram-bot-api/blob/7232881b39dfcd048a0d569f1983c5184249ee05/telegram-bot-api/Client.cpp#L19565));
+duplicate observations fold into the same topic. API failures are not recorded.
+If the API succeeds but local persistence fails, the error explicitly says so;
+check the service event/storage rather than blindly repeating the operation.
+
+For a one-time seed, prepare a human-provided JSON array, then import it:
+
+```json
+[{"chat_id":"-1001234567890","topic_id":42,"name":"Status","state":"closed","updated_at":"2026-11-18T00:00:00Z","actor":null}]
+```
+
+```bash
+node ~/zylos/.claude/skills/telegram/scripts/topics.js import --file /path/to/topics.json
+```
+
+The whole array is validated before appending; groups must be allowed. Use the
+time the state was verified for `updated_at`. Imports merge by event time and
+do not replace unrelated topics. Old dropped events cannot be recovered.
+
 ## Group Context
 
 With Core `session_mode: multi`, forwarded group messages include only context
