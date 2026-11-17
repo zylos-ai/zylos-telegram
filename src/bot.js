@@ -494,8 +494,10 @@ bot.on('text', (ctx) => {
     }
 
     if (!senderIsOwner && !isSenderAllowed(config, chatId, ctx.from.id)) {
-      console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId}, rejecting`);
-      ctx.reply("Sorry, you don't have permission to interact with me in this group.").catch(() => {});
+      console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId}, ${mentioned ? 'rejecting' : 'ignoring'}`);
+      if (mentioned) {
+        ctx.reply("Sorry, you don't have permission to interact with me in this group.").catch(() => {});
+      }
       return;
     }
 
