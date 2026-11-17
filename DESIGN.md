@@ -57,7 +57,8 @@ zylos-telegram is a core communication component of Zylos0, responsible for enab
 │   ├── post-install.js   # Post-install hook (create directories, configure PM2)
 │   └── post-upgrade.js   # Post-upgrade hook (config migration)
 ├── scripts/
-│   └── send.js           # C4 standard send interface
+│   ├── send.js           # C4 standard send interface
+│   └── topics.js         # Topic state query, import and close/reopen CLI
 └── src/
     ├── bot.js            # Main entry point
     ├── admin.js          # Admin CLI
@@ -65,6 +66,7 @@ zylos-telegram is a core communication component of Zylos0, responsible for enab
         ├── config.js     # Configuration loader
         ├── auth.js       # Authentication (owner binding + whitelist)
         ├── context.js    # Group chat context management
+        ├── topics.js     # Forum topic event recording and state storage
         └── media.js      # Media handling module
 ```
 
@@ -77,6 +79,8 @@ zylos-telegram is a core communication component of Zylos0, responsible for enab
 ~/zylos/components/telegram/
 ├── config.json           # Runtime configuration
 ├── media/                # Media file storage (images, files, etc.)
+├── data/
+│   └── topics.jsonl      # Observed forum topic state journal
 └── logs/                 # Log directory (managed by PM2)
 ```
 
