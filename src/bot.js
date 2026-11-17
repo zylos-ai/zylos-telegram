@@ -19,6 +19,7 @@ import { endpointFromCtx } from './lib/endpoint.js';
 import { sessionGroupFromEndpoint } from './lib/session-group.js';
 import { sendToC4 } from './lib/c4.js';
 import { sendGroupToC4 } from './lib/group-delivery.js';
+import { registerTopicHandlers } from './lib/topics.js';
 import {
   hasOwner, bindOwner, isDmAllowed, isOwner,
   isGroupAllowed, isSmartGroup, isSenderAllowed,
@@ -62,6 +63,7 @@ if (proxyUrl) {
 }
 
 const bot = new Telegraf(botToken, botOptions);
+registerTopicHandlers(bot, loadConfig, DATA_DIR);
 
 const TRANSCRIBE_SCRIPT = path.join(process.env.HOME, 'zylos/bin/transcribe');
 const VOICE_ENABLED = fs.existsSync(TRANSCRIBE_SCRIPT);

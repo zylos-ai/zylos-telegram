@@ -117,6 +117,37 @@ function outgoing(text = 'approval request') {
 // Integration boundary: real bot handlers, context storage, formatter, C4 sender and
 // isolated receiver process. Run when these change; skip for unrelated UI/docs/send policy.
 describe('group context delivery', () => {
+  // Covers topic handler wiring, persistence failure containment and unchanged
+  // text/media/voice delivery. Run for topic or inbound handler changes.
+  it('records service events silently and keeps ordinary delivery working with damaged topic history', async () => {
+    const { listTopics } = await import('../src/lib/topics.js');
+    const dataDir = path.dirname(configFile);
+    const service = ctx(1);
+    service.message = { message_id: 1, message_thread_id: 9, date: 1794960000,
+      chat: service.chat, from: service.from, forum_topic_created: { name: 'Status' } };
+    state.handlers.forum_topic_created(service);
+    service.message = { ...service.message, forum_topic_created: undefined, forum_topic_closed: {} };
+    state.handlers.forum_topic_closed(service);
+    expect(listTopics(dataDir).topics[0]).toMatchObject({ state: 'closed', name: 'Status' });
+    expect(received()).toHaveLength(0);
+    expect(fs.existsSync(path.join(dataDir, 'logs/-101_t_topic-9.log'))).toBe(false);
+    fs.writeFileSync(configFile, JSON.stringify({ ...cfg('mention'), groupPolicy: 'disabled' }));
+    service.message = { ...service.message, forum_topic_closed: undefined, forum_topic_reopened: {} };
+    state.handlers.forum_topic_reopened(service);
+    expect(listTopics(dataDir).topics[0].state).toBe('closed');
+    fs.writeFileSync(configFile, JSON.stringify(cfg('mention')));
+    fs.appendFileSync(path.join(dataDir, 'data/topics.jsonl'), 'corrupt\n');
+    state.signals.SIGTERM?.();
+    await boot();
+    for (const [index, kind] of ['text', 'photo', 'document', 'voice'].entries()) {
+      await dispatch(index + 2, { mentioned: true }, kind);
+    }
+    expect(received()).toHaveLength(4);
+    expect(received()[1]).toContain('/isolated/photo');
+    expect(received()[2]).toContain('/isolated/file');
+    expect(received()[3]).toContain('fixture transcript');
+  });
+
   it('forwards smart messages once without context or own replies', async () => {
     fs.writeFileSync(configFile, JSON.stringify(cfg('smart')));
     await dispatch(1);
