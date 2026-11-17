@@ -100,6 +100,13 @@ it('does not record failed or denied API calls and distinguishes persistence fai
   await expect(changeTopicState(config, telegram, root, '-101', 9, 'close')).rejects.toThrow('operation succeeded');
 });
 
+it('lets a later service reopen in the same Telegram second supersede the command record', async () => {
+  const telegram = { getMe: async () => ({ id: 999 }), callApi: async () => true };
+  const closed = await changeTopicState(config, telegram, root, '-101', 9, 'close');
+  recordTopicMessage(config, { ...message('forum_topic_reopened'), date: Math.floor(Date.parse(closed.updated_at) / 1000) }, root);
+  expect(listTopics(root).topics[0]).toMatchObject({ state: 'open', actor: { id: 456 } });
+});
+
 // Integration boundary: shipped CLI, config and journal in private HOME. Run
 // when topics CLI/import/storage changes; skip unrelated delivery/UI changes.
 // No Telegram transport, tmux, PM2 or database is used. Child timeout is bounded.
