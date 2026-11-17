@@ -20,10 +20,14 @@ afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
 
 it('records create, close, rename and reopen with the service actor and time', () => {
   recordTopicMessage(config, message('forum_topic_created', { name: 'Status' }), root);
+  expect(listTopics(root, '-101', 'open').topics).toHaveLength(1);
+  expect(listTopics(root, '-101', 'open').topics[0]).toMatchObject({ state: 'open', name: 'Status' });
   recordTopicMessage(config, message('forum_topic_closed'), root);
   expect(listTopics(root, '-101', 'closed').topics[0]).toMatchObject({ state: 'closed', name: 'Status',
     updated_at: new Date(1794960001000).toISOString(), actor: { id: 456, username: 'admin' } });
   recordTopicMessage(config, message('forum_topic_edited', { name: 'Updates' }), root);
+  expect(listTopics(root, '-101', 'closed').topics).toHaveLength(1);
+  expect(listTopics(root, '-101', 'closed').topics[0]).toMatchObject({ name: 'Updates', state: 'closed' });
   recordTopicMessage(config, message('forum_topic_reopened'), root);
   expect(listTopics(root, '-101', 'open').topics[0]).toMatchObject({ name: 'Updates', state: 'open' });
   expect(listTopics(root, '-999').topics).toHaveLength(0);
@@ -35,6 +39,7 @@ it('keeps unknown state and name explicit, including General and anonymous admin
   update.sender_chat = { id: -101, title: 'Anonymous admin' };
   recordTopicMessage(config, update, root);
   expect(listTopics(root).topics[0]).toMatchObject({ topic_id: 1, state: null, actor: update.sender_chat });
+  expect(listTopics(root, '-101', 'open').topics).toHaveLength(0);
   recordTopicMessage(config, message('forum_topic_closed'), root);
   expect(listTopics(root).topics.find(topic => topic.topic_id === 9).name).toBeNull();
 });
@@ -123,6 +128,12 @@ it('runs JSON list/import CLI against isolated component data', () => {
   fs.writeFileSync(seed, JSON.stringify([record()]));
   expect(cli('import', '--file', seed)).toEqual({ imported: 1 });
   expect(cli('list', '--chat', '-101', '--state', 'open').topics[0].name).toBe('Status');
+  fs.writeFileSync(seed, JSON.stringify([record({ chat_id: '-999' })]));
+  let denied;
+  try { cli('import', '--file', seed); } catch (error) { denied = error; }
+  expect(denied?.status).toBe(1);
+  expect(JSON.parse(denied.stderr).error).toContain('group that is not allowed');
+  expect(cli('list', '--chat', '-999').topics).toHaveLength(0);
   fs.appendFileSync(path.join(dataDir, 'data/topics.jsonl'), 'bad\n');
   expect(() => cli('list')).toThrow();
 });
