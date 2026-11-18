@@ -66,7 +66,7 @@ zylos-telegram is a core communication component of Zylos0, responsible for enab
         ├── config.js     # Configuration loader
         ├── auth.js       # Authentication (owner binding + whitelist)
         ├── context.js    # Group chat context management
-        ├── topics.js     # Forum topic event recording and state storage
+        ├── topics.js     # Forum topic event recording, rotation and replay
         └── media.js      # Media handling module
 ```
 
@@ -80,9 +80,40 @@ zylos-telegram is a core communication component of Zylos0, responsible for enab
 ├── config.json           # Runtime configuration
 ├── media/                # Media file storage (images, files, etc.)
 ├── data/
-│   └── topics.jsonl      # Observed forum topic state journal
+│   ├── topics.jsonl      # Current append-only topic journal
+│   └── topics.jsonl.*    # Retained UTC timestamped rotations
 └── logs/                 # Log directory (managed by PM2)
 ```
+
+The §2.1 topic module checks the current journal before each append from bot
+events, successful close/reopen commands and imports. At 2 MiB (2,097,152 bytes)
+it uses atomic rename to `topics.jsonl.YYYYMMDDTHHmmssSSSZ` (UTC), without
+copying, compressing or rewriting lines. It exclusively creates a `<target>.reserve` marker before checking that the
+target does not exist and renaming, advancing collisions by one millisecond.
+Pruning skips targets with active reservation markers; markers are outside the
+query filename pattern and are removed after the rename attempt. This prevents
+concurrent writers from replacing another rotation, including a stalled writer's
+target. If another writer already moved current, the reservation is removed;
+if a fresh current file exists, it may become an additional small rotation.
+Both writers still append. A process crash can leave an empty reservation marker;
+future writers skip that name rather than reusing it.
+Rotation and deletion errors are logged without preventing the event append.
+
+Keep at most 5 files including current, deleting the oldest rotated filename.
+Active reservations or failed pruning can temporarily exceed the limit until a
+later append succeeds.
+Queries recognize only this module's timestamp pattern, read rotations in
+filename order followed by current, then replay by event time with file order
+breaking ties. Missing current with retained rotations is valid; only an empty
+history set produces a missing-history warning. Corrupt lines fail the whole
+query and name their file. The existing data-directory upgrade contract retains
+both current and rotated journals.
+
+Known limitation: removing the oldest file forgets a topic if no later event
+mentions it. It disappears from all query/state filters and is unknown, rather
+than assigned an incorrect state. At roughly 50 changes daily, a file covers
+over half a year, five files roughly two to three years, and queries read about
+10 MiB. Retention is count/size based, not age based.
 
 ---
 
