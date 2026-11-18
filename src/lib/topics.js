@@ -15,35 +15,84 @@ function validate(record) {
   }
 }
 
+const ROTATE_BYTES = 2 * 1024 * 1024;
+const KEEP_FILES = 5;
+const ROTATED_NAME = /^topics\.jsonl\.(\d{8}T\d{9}Z)$/;
+
+function historyFiles(directory) {
+  try { return fs.readdirSync(directory).filter(name => ROTATED_NAME.test(name)).sort(); }
+  catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+}
+
+function rotateTopics(file) {
+  const directory = path.dirname(file);
+  try {
+    if (fs.statSync(file).size >= ROTATE_BYTES) {
+      let timestamp = Date.now();
+      let target, reservation;
+      // Keep reservations outside the history pattern. All rotating writers
+      // reserve first; pruning skips reserved names, including stalled writers.
+      for (;;) {
+        const suffix = new Date(timestamp++).toISOString().replace(/[-:.]/g, '');
+        target = `${file}.${suffix}`;
+        reservation = `${target}.reserve`;
+        try { fs.closeSync(fs.openSync(reservation, 'wx', 0o600)); }
+        catch (error) { if (error.code === 'EEXIST') continue; throw error; }
+        if (!fs.existsSync(target)) break;
+        fs.unlinkSync(reservation);
+      }
+      try { fs.renameSync(file, target); }
+      finally { fs.unlinkSync(reservation); }
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') console.error('[telegram] Failed to rotate topic history:', error.message);
+  }
+  try {
+    // Leave one slot for the current file, including the gap just after rename.
+    const files = historyFiles(directory);
+    for (const name of files.slice(0, Math.max(0, files.length - (KEEP_FILES - 1)))) {
+      if (fs.existsSync(path.join(directory, `${name}.reserve`))) continue;
+      try { fs.unlinkSync(path.join(directory, name)); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+  } catch (error) { console.error('[telegram] Failed to prune topic history:', error.message); }
+}
+
 // One append per batch keeps independent bot/CLI writers from replacing each
 // other's snapshots. The journal is preserved by the existing data/ lifecycle.
 export function appendTopics(dataDir, records) {
   records.forEach(validate);
   const file = path.join(dataDir, 'data', 'topics.jsonl');
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  rotateTopics(file);
   fs.appendFileSync(file, records.map(record => JSON.stringify(record)).join('\n') + '\n', { mode: 0o600 });
 }
 
 export function listTopics(dataDir, chatId, state) {
-  let text;
-  try { text = fs.readFileSync(path.join(dataDir, 'data', 'topics.jsonl'), 'utf8'); }
-  catch (error) {
-    if (error.code === 'ENOENT') return { topics: [], warning: 'Topic history is missing; past events cannot be recovered. Import a human-provided list.' };
-    throw error;
+  const directory = path.join(dataDir, 'data');
+  const files = [...historyFiles(directory), 'topics.jsonl'];
+  const records = [];
+  let found = false;
+  for (const file of files) {
+    let text;
+    try { text = fs.readFileSync(path.join(directory, file), 'utf8'); found = true; }
+    catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    try {
+      for (const line of text.split('\n').filter(Boolean)) {
+        const record = JSON.parse(line); validate(record); records.push(record);
+      }
+    } catch { throw new Error(`Topic history is corrupt in data/${file}; results are unavailable. Preserve the file and repair it before querying.`); }
   }
+  if (!found) return { topics: [], warning: 'Topic history is missing; past events cannot be recovered. Import a human-provided list.' };
   const topics = new Map();
-  try {
-    const records = text.split('\n').filter(Boolean).map(line => {
-      const record = JSON.parse(line); validate(record); return record;
-    }).sort((a, b) => Date.parse(a.updated_at) - Date.parse(b.updated_at));
-    for (const record of records) {
-      const key = `${record.chat_id}:${record.topic_id}`;
-      const previous = topics.get(key);
-      // Replay in event time, preserving known fields on partial service events.
-      topics.set(key, { ...record, chat_id: String(record.chat_id),
-        name: record.name ?? previous?.name ?? null, state: record.state ?? previous?.state ?? null });
-    }
-  } catch { throw new Error('Topic history is corrupt; results are unavailable. Preserve data/topics.jsonl and repair it before querying.'); }
+  records.sort((a, b) => Date.parse(a.updated_at) - Date.parse(b.updated_at));
+  for (const record of records) {
+    const key = `${record.chat_id}:${record.topic_id}`;
+    const previous = topics.get(key);
+    // Replay in event time, preserving known fields on partial service events.
+    topics.set(key, { ...record, chat_id: String(record.chat_id),
+      name: record.name ?? previous?.name ?? null, state: record.state ?? previous?.state ?? null });
+  }
   return { topics: [...topics.values()].filter(topic =>
     (!chatId || topic.chat_id === String(chatId)) && (!state || topic.state === state)) };
 }

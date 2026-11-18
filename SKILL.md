@@ -352,9 +352,30 @@ to C4 or conversational history. Config changes apply through the existing hot r
 Telegram has no topic-state query API. This history is observational: events
 before installation, downtime beyond Telegram's update retention, or operations
 outside this component may leave gaps. Missing history returns an empty list
-with a warning; damaged history returns an error and nonzero exit. Neither
+with a warning only when neither current nor rotated files exist; damaged history
+returns an error naming the file and a nonzero exit. Neither
 blocks bot startup or ordinary messages. Topic history is an append-only journal
 at `data/topics.jsonl` in the component data directory, preserved on upgrades.
+Before each append (service events, close/reopen and import), a current file of
+at least 2 MiB (2,097,152 bytes) is atomically renamed to
+`topics.jsonl.YYYYMMDDTHHmmssSSSZ` (UTC). An exclusive filename reservation
+prevents concurrent bot/CLI rotations from overwriting history; same-millisecond
+collisions advance the suffix by a millisecond. Temporary `<target>.reserve`
+markers are excluded from queries and protect in-flight targets from pruning;
+crash-left markers cause that name to be skipped by future writers. At most 5 files including the
+current file are retained, deleting the oldest rotated name. Rotation/pruning
+errors are logged and the event is still appended; active reservations or failed
+pruning can exceed 5 until
+a later append can prune successfully. There is no compression, line rewriting
+or age-based expiry.
+
+Queries read only matching rotated names, in filename order followed by the
+current file, then replay all retained events by event time (file order breaks
+ties). A rotated-only history works normally. Known limitation: after an oldest
+file is deleted, a topic with no later event disappears from query results
+(becomes unknown); it is not treated as an incorrect open/closed state. At about
+50 changes per day, a file can cover over half a year and five files about two
+to three years; queries read approximately 10 MiB under that workload.
 
 Use `topics.js close|reopen` instead of raw Bot API calls: successful operations
 are recorded immediately, even before the service update arrives. Telegram's
