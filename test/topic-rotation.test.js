@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, fork } from 'node:child_process';
 import { appendTopics, listTopics } from '../src/lib/topics.js';
@@ -9,14 +10,14 @@ let root, data;
 const record = (overrides = {}) => ({ chat_id: '-101', topic_id: 9, name: 'Status', state: 'closed',
   updated_at: '2026-11-18T00:00:00Z', actor: null, ...overrides });
 const line = value => JSON.stringify(value) + '\n';
-const archive = stamp => `topics.jsonl.${stamp}`;
+const archive = stamp => `topics.jsonl.${stamp}-${process.pid}`;
 const large = () => { const json = JSON.stringify(record()); return json + ' '.repeat(2 * 1024 * 1024 - Buffer.byteLength(json) - 1) + '\n'; };
 const names = () => fs.readdirSync(data).sort();
 const write = (name, value) => fs.writeFileSync(path.join(data, name), value);
 const privateEnv = () => ({ ...process.env, HOME: root, ZYLOS_DIR: path.join(root, 'zylos'),
   PM2_HOME: path.join(root, 'pm2'), TMPDIR: root, TELEGRAM_BOT_TOKEN: '', TELEGRAM_PROXY_URL: '' });
 beforeEach(() => {
-  root = fs.mkdtempSync('/tmp/tg-rot-');
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-rot-'));
   data = path.join(root, 'data'); fs.mkdirSync(data);
 });
 afterEach(() => { vi.restoreAllMocks(); fs.rmSync(root, { recursive: true, force: true }); });
@@ -35,7 +36,7 @@ it('renames a full journal byte for byte and replays old and new topics', () => 
   const bytes = Buffer.from(large()); write('topics.jsonl', bytes);
   appendTopics(root, [record({ topic_id: 10, state: 'open' })]);
   const rotated = names().find(name => name !== 'topics.jsonl');
-  expect(rotated).toMatch(/^topics\.jsonl\.\d{8}T\d{9}Z$/);
+  expect(rotated).toMatch(/^topics\.jsonl\.\d{8}T\d{9}Z-[1-9]\d*$/);
   expect(fs.readFileSync(path.join(data, rotated)).equals(bytes)).toBe(true);
   expect(fs.readFileSync(path.join(data, 'topics.jsonl'), 'utf8')).toBe(line(record({ topic_id: 10, state: 'open' })));
   expect(listTopics(root).topics.map(topic => topic.topic_id).sort()).toEqual([10, 9]);
@@ -70,22 +71,9 @@ it('does not replace a preexisting rotation target in the same millisecond', () 
   expect(listTopics(root).topics.map(topic => topic.topic_id).sort()).toEqual([10, 2, 9]);
 });
 
-it('does not prune an in-flight reserved target or reuse its name', () => {
-  vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-01-01T00:00:00Z'));
-  const reserved = archive('20260101T000000000Z');
-  write(`${reserved}.reserve`, '');
-  write(reserved, line(record({ topic_id: 1 })));
-  for (let i = 2; i <= 5; i++) write(archive(`2026010${i}T000000000Z`), line(record({ topic_id: i })));
-  write('topics.jsonl', large());
-  appendTopics(root, [record({ topic_id: 10 })]);
-  expect(fs.readFileSync(path.join(data, reserved), 'utf8')).toBe(line(record({ topic_id: 1 })));
-  expect(listTopics(root).topics.some(topic => topic.topic_id === 10)).toBe(true);
-  expect(fs.existsSync(path.join(data, `${reserved}.reserve`))).toBe(true);
-});
-
 it('reads rotated history without the current file and ignores unrelated names', () => {
   const file = archive('20260101T000000000Z'); write(file, line(record()));
-  for (const name of ['topics.jsonl.bak', 'topics.jsonl.2026-01-01', 'other.jsonl.20260101T000000000Z']) write(name, 'broken\n');
+  for (const name of ['topics.jsonl.bak', 'topics.jsonl.2026-01-01', 'topics.jsonl.20260101T000000000Z', 'topics.jsonl.20260101T000000000Z-abc', 'other.jsonl.20260101T000000000Z-12345']) write(name, 'broken\n');
   expect(listTopics(root)).not.toHaveProperty('warning');
   expect(listTopics(root).topics).toHaveLength(1);
   fs.appendFileSync(path.join(data, file), 'broken\n');
@@ -97,9 +85,7 @@ it.each(['renameSync', 'unlinkSync'])('still appends and logs when %s fails', me
   if (method === 'unlinkSync') {
     for (let i = 1; i <= 4; i++) write(archive(`2026010${i}T000000000Z`), line(record({ topic_id: i })));
   }
-  const original = fs[method];
-  vi.spyOn(fs, method).mockImplementation((...args) => {
-    if (method === 'unlinkSync' && String(args[0]).endsWith('.reserve')) return original(...args);
+  vi.spyOn(fs, method).mockImplementation(() => {
     throw Object.assign(new Error('storage denied'), { code: 'EACCES' });
   });
   const error = vi.spyOn(console, 'error').mockImplementation(() => {});

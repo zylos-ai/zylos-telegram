@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { appendTopics, listTopics, recordTopicMessage, registerTopicHandlers, changeTopicState } from '../src/lib/topics.js';
@@ -14,7 +15,7 @@ const record = (overrides = {}) => ({ chat_id: '-101', topic_id: 9, name: 'Statu
   updated_at: '2026-11-18T00:00:00Z', actor: { id: 123 }, ...overrides });
 const message = (event, value = {}) => ({ chat: { id: -101, type: 'supergroup' },
   message_thread_id: 9, date: 1794960001, from: { id: 456, username: 'admin' }, [event]: value });
-beforeEach(() => { root = fs.mkdtempSync('/tmp/tg-topic-'); });
+beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-topic-')); });
 afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
 
 it('records create, close, rename and reopen with the service actor and time', () => {

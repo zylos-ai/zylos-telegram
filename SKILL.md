@@ -358,15 +358,11 @@ blocks bot startup or ordinary messages. Topic history is an append-only journal
 at `data/topics.jsonl` in the component data directory, preserved on upgrades.
 Before each append (service events, close/reopen and import), a current file of
 at least 2 MiB (2,097,152 bytes) is atomically renamed to
-`topics.jsonl.YYYYMMDDTHHmmssSSSZ` (UTC). An exclusive filename reservation
-prevents concurrent bot/CLI rotations from overwriting history; same-millisecond
-collisions advance the suffix by a millisecond. Temporary `<target>.reserve`
-markers are excluded from queries and protect in-flight targets from pruning;
-crash-left markers cause that name to be skipped by future writers. At most 5 files including the
-current file are retained, deleting the oldest rotated name. Rotation/pruning
-errors are logged and the event is still appended; active reservations or failed
-pruning can exceed 5 until
-a later append can prune successfully. There is no compression, line rewriting
+`topics.jsonl.YYYYMMDDTHHmmssSSSZ-PID` (UTC). Filenames include the process ID,
+so two writers rotating simultaneously cannot overwrite each other. At most
+5 files including the current file are retained, deleting the oldest rotated
+name. Rotation/pruning errors are logged and the event is still appended;
+failed pruning can exceed 5 until a later append can prune successfully. There is no compression, line rewriting
 or age-based expiry.
 
 Queries read only matching rotated names, in filename order followed by the

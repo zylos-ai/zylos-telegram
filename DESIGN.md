@@ -87,21 +87,13 @@ zylos-telegram is a core communication component of Zylos0, responsible for enab
 
 The §2.1 topic module checks the current journal before each append from bot
 events, successful close/reopen commands and imports. At 2 MiB (2,097,152 bytes)
-it uses atomic rename to `topics.jsonl.YYYYMMDDTHHmmssSSSZ` (UTC), without
-copying, compressing or rewriting lines. It exclusively creates a `<target>.reserve` marker before checking that the
-target does not exist and renaming, advancing collisions by one millisecond.
-Pruning skips targets with active reservation markers; markers are outside the
-query filename pattern and are removed after the rename attempt. This prevents
-concurrent writers from replacing another rotation, including a stalled writer's
-target. If another writer already moved current, the reservation is removed;
-if a fresh current file exists, it may become an additional small rotation.
-Both writers still append. A process crash can leave an empty reservation marker;
-future writers skip that name rather than reusing it.
+it uses atomic rename to `topics.jsonl.YYYYMMDDTHHmmssSSSZ-PID` (UTC), without
+copying, compressing or rewriting lines. Filenames include the process ID,
+so two writers rotating simultaneously cannot overwrite each other.
 Rotation and deletion errors are logged without preventing the event append.
 
 Keep at most 5 files including current, deleting the oldest rotated filename.
-Active reservations or failed pruning can temporarily exceed the limit until a
-later append succeeds.
+Failed pruning can temporarily exceed the limit until a later append succeeds.
 Queries recognize only this module's timestamp pattern, read rotations in
 filename order followed by current, then replay by event time with file order
 breaking ties. Missing current with retained rotations is valid; only an empty

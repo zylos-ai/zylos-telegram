@@ -17,7 +17,7 @@ function validate(record) {
 
 const ROTATE_BYTES = 2 * 1024 * 1024;
 const KEEP_FILES = 5;
-const ROTATED_NAME = /^topics\.jsonl\.(\d{8}T\d{9}Z)$/;
+const ROTATED_NAME = /^topics\.jsonl\.\d{8}T\d{9}Z-[1-9]\d*$/;
 
 function historyFiles(directory) {
   try { return fs.readdirSync(directory).filter(name => ROTATED_NAME.test(name)).sort(); }
@@ -29,20 +29,12 @@ function rotateTopics(file) {
   try {
     if (fs.statSync(file).size >= ROTATE_BYTES) {
       let timestamp = Date.now();
-      let target, reservation;
-      // Keep reservations outside the history pattern. All rotating writers
-      // reserve first; pruning skips reserved names, including stalled writers.
-      for (;;) {
+      let target;
+      do {
         const suffix = new Date(timestamp++).toISOString().replace(/[-:.]/g, '');
-        target = `${file}.${suffix}`;
-        reservation = `${target}.reserve`;
-        try { fs.closeSync(fs.openSync(reservation, 'wx', 0o600)); }
-        catch (error) { if (error.code === 'EEXIST') continue; throw error; }
-        if (!fs.existsSync(target)) break;
-        fs.unlinkSync(reservation);
-      }
-      try { fs.renameSync(file, target); }
-      finally { fs.unlinkSync(reservation); }
+        target = `${file}.${suffix}-${process.pid}`;
+      } while (fs.existsSync(target));
+      fs.renameSync(file, target);
     }
   } catch (error) {
     if (error.code !== 'ENOENT') console.error('[telegram] Failed to rotate topic history:', error.message);
@@ -51,7 +43,6 @@ function rotateTopics(file) {
     // Leave one slot for the current file, including the gap just after rename.
     const files = historyFiles(directory);
     for (const name of files.slice(0, Math.max(0, files.length - (KEEP_FILES - 1)))) {
-      if (fs.existsSync(path.join(directory, `${name}.reserve`))) continue;
       try { fs.unlinkSync(path.join(directory, name)); }
       catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
