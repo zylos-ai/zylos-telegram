@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-18
+
+### Added
+- Forum topic state: the component now records topic create, rename, close
+  and reopen events for groups allowed by `groupPolicy`, including closures by
+  administrators who cannot trigger the agent. These events are not forwarded
+  to the agent. New `scripts/topics.js` command with `list` (optionally
+  filtered by `--state open|closed`), `close`, `reopen` and a one-time
+  `import`; results are JSON. Close/reopen through this command are recorded
+  as soon as Telegram accepts them. Telegram has no API to query topic state,
+  so topics not seen since installation stay unknown, never assumed open (#93).
+- Topic history is kept in `data/topics.jsonl`, which is preserved on
+  upgrades. At 2 MiB the file is rotated; at most 5 files are kept, and the
+  oldest is deleted. A topic whose only events were in a deleted file becomes
+  unknown again (#93).
+
+### Changed
+- Smart-mode groups: an ordinary message from a sender who is not allowed is
+  now recorded as group context and silently ignored, instead of getting a
+  public denial reply. If that sender @mentions the bot, the denial is still
+  sent, as before. Allowed senders and the owner are unaffected (#95).
+
 ## [0.7.1] - 2026-11-14
 
 ### Fixed
