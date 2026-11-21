@@ -13,9 +13,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import { execFile } from 'child_process';
 import dotenv from 'dotenv';
 import { redactSecrets } from '../src/lib/redact.js';
+import { curlAsync } from '../src/lib/curl.js';
 
 dotenv.config({ path: path.join(process.env.HOME, 'zylos/.env') });
 
@@ -44,11 +44,10 @@ fs.mkdirSync(MEDIA_DIR, { recursive: true });
 // Step 1: Call getFile API to get the file_path
 async function getFilePath(fileId) {
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`;
-  const curlArgs = ['-s', '--fail', '--max-time', '10', url];
-  if (PROXY_URL) curlArgs.splice(1, 0, '--proxy', PROXY_URL);
+  const curlArgs = ['-s', '--fail', '--max-time', '10'];
 
   return new Promise((resolve, reject) => {
-    execFile('curl', curlArgs, { timeout: 15000 }, (error, stdout) => {
+    curlAsync(curlArgs, url, { timeout: 15000, proxy: PROXY_URL }, (error, stdout) => {
       if (error) return reject(new Error(`getFile API failed: ${error.message}`));
       try {
         const data = JSON.parse(stdout);
@@ -66,11 +65,10 @@ async function getFilePath(fileId) {
 // Step 2: Download the file
 async function downloadFile(filePath, localPath) {
   const url = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-  const curlArgs = ['-s', '--fail', '--max-time', '60', '-o', localPath, url];
-  if (PROXY_URL) curlArgs.splice(1, 0, '--proxy', PROXY_URL);
+  const curlArgs = ['-s', '--fail', '--max-time', '60', '-o', localPath];
 
   return new Promise((resolve, reject) => {
-    execFile('curl', curlArgs, { timeout: 65000 }, (error) => {
+    curlAsync(curlArgs, url, { timeout: 65000, proxy: PROXY_URL }, (error) => {
       if (error) return reject(new Error(`Download failed: ${error.message}`));
       resolve(localPath);
     });
