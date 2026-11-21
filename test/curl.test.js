@@ -27,4 +27,13 @@ describe('curlUrlConfig', () => {
   it('rejects line breaks in the proxy', () => {
     expect(() => curlUrlConfig('https://x/a', 'http://p\noutput = /tmp/x')).toThrow(/proxy must not contain line breaks/);
   });
+
+  it('adds the request body as a quoted data-binary line', () => {
+    expect(curlUrlConfig('https://x/a', '', '{"text":"a\\nb \\"q\\""}'))
+      .toBe('url = "https://x/a"\ndata-binary = "{\\"text\\":\\"a\\\\nb \\\\\\"q\\\\\\"\\"}"\n');
+  });
+
+  it('rejects line breaks in the request body', () => {
+    expect(() => curlUrlConfig('https://x/a', '', 'a\nb')).toThrow(/data must not contain line breaks/);
+  });
 });

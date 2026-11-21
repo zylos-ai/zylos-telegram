@@ -1,10 +1,11 @@
 /**
- * curl helpers that keep the request URL and proxy out of argv.
+ * curl helpers that keep the request URL, proxy and request body out of argv.
  *
- * Telegram API and file URLs carry the bot token (`/bot<token>/...`), and a
- * proxy URL may carry `user:password@`. Anything in argv is visible to every
- * local user via `ps` / `/proc/<pid>/cmdline`, so both are passed to curl as a
- * config file on stdin (`-K -`) instead.
+ * Telegram API and file URLs carry the bot token (`/bot<token>/...`), a proxy
+ * URL may carry `user:password@`, and a request body carries the message text.
+ * Anything in argv is visible to every local user via `ps` /
+ * `/proc/<pid>/cmdline`, so all three are passed to curl as a config file on
+ * stdin (`-K -`) instead.
  */
 
 import { execFile, execFileSync } from 'child_process';
@@ -27,28 +28,32 @@ function quoteConfigValue(name, value) {
 }
 
 /**
- * Build a curl config that sets the URL and, when given, the proxy.
+ * Build a curl config that sets the URL and, when given, the proxy and the
+ * request body (sent as-is, like `--data-binary`).
  *
  * @param {string} url
  * @param {string} [proxy]
+ * @param {string} [data]
  * @returns {string}
  */
-export function curlUrlConfig(url, proxy) {
+export function curlUrlConfig(url, proxy, data) {
   let config = `url = ${quoteConfigValue('URL', url)}\n`;
   if (proxy) config += `proxy = ${quoteConfigValue('proxy', proxy)}\n`;
+  if (data !== undefined) config += `data-binary = ${quoteConfigValue('data', data)}\n`;
   return config;
 }
 
 /**
- * Synchronous curl call; `url` and `options.proxy` go through stdin, never argv.
+ * Synchronous curl call; `url`, `options.proxy` and `options.data` go through
+ * stdin, never argv.
  *
- * @param {string[]} args - curl arguments without the URL or proxy
+ * @param {string[]} args - curl arguments without the URL, proxy or body
  * @param {string} url
- * @param {object} [options] - execFileSync options plus optional `proxy` (`input` is overridden)
+ * @param {object} [options] - execFileSync options plus optional `proxy` and `data` (`input` is overridden)
  */
 export function curlSync(args, url, options = {}) {
-  const { proxy, ...execOptions } = options;
-  return execFileSync('curl', ['-K', '-', ...args], { ...execOptions, input: curlUrlConfig(url, proxy) });
+  const { proxy, data, ...execOptions } = options;
+  return execFileSync('curl', ['-K', '-', ...args], { ...execOptions, input: curlUrlConfig(url, proxy, data) });
 }
 
 /**

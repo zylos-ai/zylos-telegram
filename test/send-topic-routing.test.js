@@ -24,7 +24,10 @@ import fs from 'node:fs';
 const argv = process.argv.slice(2);
 const config = argv.includes('-K') ? fs.readFileSync(0, 'utf8') : '';
 const url = (config.match(/^url = "(.*)"$/m) || [])[1];
-const seen = url ? [url, ...argv] : argv;
+// The JSON body also comes through the config (data-binary); unquote it like curl does.
+const body = (config.match(/^data-binary = "(.*)"$/m) || [])[1];
+const data = body === undefined ? undefined : body.replace(/\\\\(.)/g, '$1');
+const seen = [...(url ? [url] : []), ...argv, ...(data === undefined ? [] : ['-d', data])];
 fs.appendFileSync(process.env.TG_TEST_CURL_LOG, JSON.stringify(seen) + '\\n');
 fs.appendFileSync(process.env.TG_TEST_CURL_LOG + '.argv', JSON.stringify(argv) + '\\n');
 fs.appendFileSync(process.env.TG_TEST_CURL_LOG + '.config', JSON.stringify(config) + '\\n');
@@ -135,6 +138,19 @@ describe('send.js forum topic routing', () => {
     expect(argv[0].join(' ')).not.toContain('fixture-token');
     const config = fs.readFileSync(curlLog + '.config', 'utf8').trim().split('\n').map(line => JSON.parse(line));
     expect(config[0]).toContain(`proxy = "${proxy}"\n`);
+  });
+
+  it('text: the message JSON goes to the curl config, never argv', async () => {
+    const text = 'private "chat" text\\with\nnewline';
+    const result = await runSend('-100', text);
+    expect(result.code).toBe(0);
+    const argv = fs.readFileSync(curlLog + '.argv', 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    expect(argv).toHaveLength(1);
+    expect(argv[0]).not.toContain('-d');
+    expect(argv[0].join(' ')).not.toContain('private');
+    const config = fs.readFileSync(curlLog + '.config', 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    expect(config[0]).toMatch(/^data-binary = ".*"$/m);
+    expect(JSON.parse(calls()[0].at(-1))).toMatchObject({ chat_id: '-100', text });
   });
 
   it('no thread or topic: sends to the chat without a thread id', async () => {

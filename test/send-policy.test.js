@@ -22,7 +22,10 @@ import fs from 'node:fs';
 const argv = process.argv.slice(2);
 const config = argv.includes('-K') ? fs.readFileSync(0, 'utf8') : '';
 const url = (config.match(/^url = "(.*)"$/m) || [])[1];
-const seen = url ? [url, ...argv] : argv;
+// The JSON body also comes through the config (data-binary); unquote it like curl does.
+const body = (config.match(/^data-binary = "(.*)"$/m) || [])[1];
+const data = body === undefined ? undefined : body.replace(/\\\\(.)/g, '$1');
+const seen = [...(url ? [url] : []), ...argv, ...(data === undefined ? [] : ['-d', data])];
 fs.appendFileSync(process.env.TG_TEST_CURL_LOG, JSON.stringify(seen) + '\\n');
 fs.appendFileSync(process.env.TG_TEST_CURL_LOG + '.argv', JSON.stringify(argv) + '\\n');
 const jsonIndex = seen.indexOf('-d');

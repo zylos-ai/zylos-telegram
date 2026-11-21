@@ -93,10 +93,11 @@ function apiRequest(method, params) {
     }
     result = curlSync(args, url, { encoding: 'utf8', timeout: 35000, proxy: PROXY_URL });
   } else {
-    const jsonData = JSON.stringify(params);
     const textArgs = ['-s', '--max-time', '30', '--write-out', '\n%{http_code}', '-X', 'POST',
-      '-H', 'Content-Type: application/json', '-d', jsonData];
-    result = curlSync(textArgs, url, { encoding: 'utf8', timeout: 35000, proxy: PROXY_URL });
+      '-H', 'Content-Type: application/json'];
+    result = curlSync(textArgs, url, {
+      encoding: 'utf8', timeout: 35000, proxy: PROXY_URL, data: JSON.stringify(params),
+    });
   }
   const statusMatch = result.match(/\n(\d{3})$/);
   if (!statusMatch) {
