@@ -19,7 +19,14 @@ beforeEach(async () => {
   fs.writeFileSync(path.join(bin, 'package.json'), '{"type":"module"}');
   fs.writeFileSync(path.join(bin, 'curl'), `#!/usr/bin/env node
 import fs from 'node:fs';
-fs.appendFileSync(process.env.TG_TEST_CURL_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');
+// send.js passes the URL as a curl config on stdin (-K -) so the bot token stays
+// out of argv. Log the raw argv separately, and argv + URL for the assertions.
+const argv = process.argv.slice(2);
+const config = argv.includes('-K') ? fs.readFileSync(0, 'utf8') : '';
+const url = (config.match(/^url = "(.*)"$/m) || [])[1];
+const seen = url ? [url, ...argv] : argv;
+fs.appendFileSync(process.env.TG_TEST_CURL_LOG, JSON.stringify(seen) + '\\n');
+fs.appendFileSync(process.env.TG_TEST_CURL_LOG + '.argv', JSON.stringify(argv) + '\\n');
 process.stdout.write('{"ok":true,"result":{}}\\n200');
 `, { mode: 0o755 });
   curlLog = path.join(root, 'curl.jsonl');
@@ -99,6 +106,18 @@ describe('send.js forum topic routing', () => {
     expect(transport).toHaveLength(1);
     expect(transport[0]).toContain('chat_id=-100');
     expect(transport[0]).toContain('message_thread_id=162');
+  });
+
+  it.each(['hello', '[MEDIA:image]', '[MEDIA:file]'])('%s: bot token never appears in curl argv', async message => {
+    const media = path.join(root, 'sample.txt');
+    fs.writeFileSync(media, 'fixture');
+    const result = await runSend('-100', message.startsWith('[MEDIA:') ? message + media : message);
+    expect(result.code).toBe(0);
+    const argv = fs.readFileSync(curlLog + '.argv', 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    expect(argv).toHaveLength(1);
+    expect(argv[0].slice(0, 2)).toEqual(['-K', '-']);
+    expect(argv[0].join(' ')).not.toContain('fixture-token');
+    expect(calls()[0][0]).toMatch(/^https:\/\/api\.telegram\.org\/botfixture-token\/send(Message|Photo|Document)$/);
   });
 
   it('no thread or topic: sends to the chat without a thread id', async () => {

@@ -9,9 +9,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import { execFileSync } from 'child_process';
 import dotenv from 'dotenv';
 import { redactSecrets } from '../src/lib/redact.js';
+import { curlSync } from '../src/lib/curl.js';
 
 const HOME = process.env.HOME;
 dotenv.config({ path: path.join(HOME, 'zylos/.env') });
@@ -38,9 +38,8 @@ try {
   const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`;
   const apiArgs = ['-s', '--fail', '--max-time', '30'];
   if (PROXY_URL) apiArgs.push('--proxy', PROXY_URL);
-  apiArgs.push(apiUrl);
 
-  const response = JSON.parse(execFileSync('curl', apiArgs, { encoding: 'utf8', timeout: 35000 }));
+  const response = JSON.parse(curlSync(apiArgs, apiUrl, { encoding: 'utf8', timeout: 35000 }));
 
   if (!response.ok) {
     console.error(`Telegram API error: ${response.description || 'unknown error'}`);
@@ -57,9 +56,8 @@ try {
   const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
   const dlArgs = ['-s', '--fail', '--max-time', '120', '-o', localPath];
   if (PROXY_URL) dlArgs.push('--proxy', PROXY_URL);
-  dlArgs.push(fileUrl);
 
-  execFileSync('curl', dlArgs, { timeout: 125000 });
+  curlSync(dlArgs, fileUrl, { timeout: 125000 });
 
   const stats = fs.statSync(localPath);
   console.log(localPath);

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Keep the bot token out of curl argv: `send.js` (text and media), `download.js`, `download-media.js` and media downloads pass the Telegram URL to curl as a config on stdin (`-K -`), so it no longer shows up in `ps` or `/proc/<pid>/cmdline`.
+
 ## [0.8.0] - 2026-11-18
 
 ### Added
