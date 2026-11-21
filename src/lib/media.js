@@ -89,11 +89,8 @@ export async function downloadFile(ctx, fileId, prefix = 'file') {
   // Download using curl (supports proxy), with timeout — retried on transient failures
   await withRetry(() => new Promise((resolve, reject) => {
     const args = ['-s', '--fail', '--max-time', '30', '-o', localPath];
-    if (proxyUrl) {
-      args.push('--proxy', proxyUrl);
-    }
 
-    curlAsync(args, fileUrl, { timeout: 35000 }, (error) => {
+    curlAsync(args, fileUrl, { timeout: 35000, proxy: proxyUrl }, (error) => {
       if (error) {
         // error.message includes the full curl command line — and the URL in it
         // carries the bot token. Never surface it; report only the safe exit

@@ -84,7 +84,6 @@ function apiRequest(method, params) {
     const filePath = params.photo || params.document;
     const fieldName = params.photo ? 'photo' : 'document';
     const args = ['-s', '--max-time', '30', '--write-out', '\n%{http_code}', '-X', 'POST'];
-    if (PROXY_URL) args.push('--proxy', PROXY_URL);
     args.push('-F', `chat_id=${params.chat_id}`, '-F', `${fieldName}=@${filePath}`);
     if (params.reply_to_message_id) {
       args.push('-F', `reply_to_message_id=${params.reply_to_message_id}`);
@@ -92,13 +91,12 @@ function apiRequest(method, params) {
     if (params.message_thread_id) {
       args.push('-F', `message_thread_id=${params.message_thread_id}`);
     }
-    result = curlSync(args, url, { encoding: 'utf8', timeout: 35000 });
+    result = curlSync(args, url, { encoding: 'utf8', timeout: 35000, proxy: PROXY_URL });
   } else {
     const jsonData = JSON.stringify(params);
     const textArgs = ['-s', '--max-time', '30', '--write-out', '\n%{http_code}', '-X', 'POST',
       '-H', 'Content-Type: application/json', '-d', jsonData];
-    if (PROXY_URL) textArgs.splice(1, 0, '--proxy', PROXY_URL);
-    result = curlSync(textArgs, url, { encoding: 'utf8', timeout: 35000 });
+    result = curlSync(textArgs, url, { encoding: 'utf8', timeout: 35000, proxy: PROXY_URL });
   }
   const statusMatch = result.match(/\n(\d{3})$/);
   if (!statusMatch) {

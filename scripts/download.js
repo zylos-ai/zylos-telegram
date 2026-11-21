@@ -45,10 +45,9 @@ fs.mkdirSync(MEDIA_DIR, { recursive: true });
 async function getFilePath(fileId) {
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`;
   const curlArgs = ['-s', '--fail', '--max-time', '10'];
-  if (PROXY_URL) curlArgs.splice(1, 0, '--proxy', PROXY_URL);
 
   return new Promise((resolve, reject) => {
-    curlAsync(curlArgs, url, { timeout: 15000 }, (error, stdout) => {
+    curlAsync(curlArgs, url, { timeout: 15000, proxy: PROXY_URL }, (error, stdout) => {
       if (error) return reject(new Error(`getFile API failed: ${error.message}`));
       try {
         const data = JSON.parse(stdout);
@@ -67,10 +66,9 @@ async function getFilePath(fileId) {
 async function downloadFile(filePath, localPath) {
   const url = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
   const curlArgs = ['-s', '--fail', '--max-time', '60', '-o', localPath];
-  if (PROXY_URL) curlArgs.splice(1, 0, '--proxy', PROXY_URL);
 
   return new Promise((resolve, reject) => {
-    curlAsync(curlArgs, url, { timeout: 65000 }, (error) => {
+    curlAsync(curlArgs, url, { timeout: 65000, proxy: PROXY_URL }, (error) => {
       if (error) return reject(new Error(`Download failed: ${error.message}`));
       resolve(localPath);
     });

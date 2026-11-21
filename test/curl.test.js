@@ -14,4 +14,17 @@ describe('curlUrlConfig', () => {
   it('rejects line breaks so no extra config option can be injected', () => {
     expect(() => curlUrlConfig('https://x/a\noutput = /tmp/x')).toThrow(/line breaks/);
   });
+
+  it('adds a quoted proxy line when a proxy is given', () => {
+    expect(curlUrlConfig('https://x/a', 'http://u:p"w@proxy:8080'))
+      .toBe('url = "https://x/a"\nproxy = "http://u:p\\"w@proxy:8080"\n');
+  });
+
+  it('omits the proxy line when no proxy is given', () => {
+    expect(curlUrlConfig('https://x/a', '')).toBe('url = "https://x/a"\n');
+  });
+
+  it('rejects line breaks in the proxy', () => {
+    expect(() => curlUrlConfig('https://x/a', 'http://p\noutput = /tmp/x')).toThrow(/proxy must not contain line breaks/);
+  });
 });

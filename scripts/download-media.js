@@ -37,9 +37,8 @@ try {
   // Step 1: Get file info from Telegram API
   const apiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`;
   const apiArgs = ['-s', '--fail', '--max-time', '30'];
-  if (PROXY_URL) apiArgs.push('--proxy', PROXY_URL);
 
-  const response = JSON.parse(curlSync(apiArgs, apiUrl, { encoding: 'utf8', timeout: 35000 }));
+  const response = JSON.parse(curlSync(apiArgs, apiUrl, { encoding: 'utf8', timeout: 35000, proxy: PROXY_URL }));
 
   if (!response.ok) {
     console.error(`Telegram API error: ${response.description || 'unknown error'}`);
@@ -55,9 +54,8 @@ try {
   // Step 2: Download the file
   const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
   const dlArgs = ['-s', '--fail', '--max-time', '120', '-o', localPath];
-  if (PROXY_URL) dlArgs.push('--proxy', PROXY_URL);
 
-  curlSync(dlArgs, fileUrl, { timeout: 125000 });
+  curlSync(dlArgs, fileUrl, { timeout: 125000, proxy: PROXY_URL });
 
   const stats = fs.statSync(localPath);
   console.log(localPath);

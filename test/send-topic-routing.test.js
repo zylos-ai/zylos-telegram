@@ -27,6 +27,7 @@ const url = (config.match(/^url = "(.*)"$/m) || [])[1];
 const seen = url ? [url, ...argv] : argv;
 fs.appendFileSync(process.env.TG_TEST_CURL_LOG, JSON.stringify(seen) + '\\n');
 fs.appendFileSync(process.env.TG_TEST_CURL_LOG + '.argv', JSON.stringify(argv) + '\\n');
+fs.appendFileSync(process.env.TG_TEST_CURL_LOG + '.config', JSON.stringify(config) + '\\n');
 process.stdout.write('{"ok":true,"result":{}}\\n200');
 `, { mode: 0o755 });
   curlLog = path.join(root, 'curl.jsonl');
@@ -63,12 +64,12 @@ afterEach(async () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-function runSend(endpoint, message) {
+function runSend(endpoint, message, env = {}) {
   return new Promise(resolve => {
     execFile(process.execPath, ['--import', path.join(root, 'fetch.mjs'), sendScript, endpoint, message], {
       env: { ...process.env, HOME: root, TELEGRAM_BOT_TOKEN: 'fixture-token',
         TELEGRAM_PROXY_URL: '', TG_TEST_CURL_LOG: curlLog, TG_TEST_PORT: String(port),
-        PATH: `${path.join(root, 'bin')}${path.delimiter}${process.env.PATH}` },
+        PATH: `${path.join(root, 'bin')}${path.delimiter}${process.env.PATH}`, ...env },
       timeout: 10000,
     }, (error, stdout, stderr) => resolve({ code: error?.code ?? 0, stdout, stderr }));
   });
@@ -118,6 +119,22 @@ describe('send.js forum topic routing', () => {
     expect(argv[0].slice(0, 2)).toEqual(['-K', '-']);
     expect(argv[0].join(' ')).not.toContain('fixture-token');
     expect(calls()[0][0]).toMatch(/^https:\/\/api\.telegram\.org\/botfixture-token\/send(Message|Photo|Document)$/);
+  });
+
+  it.each(['hello', '[MEDIA:image]', '[MEDIA:file]'])('%s: proxy URL goes to the curl config, never argv', async message => {
+    const proxy = 'http://proxy-user:proxy-secret@proxy.local:8080';
+    const media = path.join(root, 'sample.txt');
+    fs.writeFileSync(media, 'fixture');
+    const result = await runSend('-100', message.startsWith('[MEDIA:') ? message + media : message,
+      { TELEGRAM_PROXY_URL: proxy });
+    expect(result.code).toBe(0);
+    const argv = fs.readFileSync(curlLog + '.argv', 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    expect(argv).toHaveLength(1);
+    expect(argv[0]).not.toContain('--proxy');
+    expect(argv[0].join(' ')).not.toContain('proxy-secret');
+    expect(argv[0].join(' ')).not.toContain('fixture-token');
+    const config = fs.readFileSync(curlLog + '.config', 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    expect(config[0]).toContain(`proxy = "${proxy}"\n`);
   });
 
   it('no thread or topic: sends to the chat without a thread id', async () => {
