@@ -582,13 +582,13 @@ bot.on('photo', async (ctx) => {
       ctx.reply("Sorry, I'm not available for private messages. Please ask my owner to grant you access.").catch(() => {});
       return;
     }
-    const photos = ctx.message.photo;
-    const { file_id: fileId, file_size: fileSize = 0 } = photos[photos.length - 1];
-    if (!config.features.download_media && fileSize <= TELEGRAM_BOT_DOWNLOAD_LIMIT) {
+    if (!config.features.download_media) {
       ctx.reply('Media download is disabled.').catch(() => {});
       return;
     }
 
+    const photos = ctx.message.photo;
+    const { file_id: fileId, file_size: fileSize = 0 } = photos[photos.length - 1];
     const caption = ctx.message.caption || '[sent a photo]';
     const photoInfo = `[photo, file_id: ${fileId}, msg_id: ${messageId}]`;
     const logEntry = {
@@ -739,13 +739,13 @@ bot.on('document', async (ctx) => {
       ctx.reply("Sorry, I'm not available for private messages. Please ask my owner to grant you access.").catch(() => {});
       return;
     }
-    const doc = ctx.message.document;
-    const fileSize = doc.file_size ?? 0;
-    if (!config.features.download_media && fileSize <= TELEGRAM_BOT_DOWNLOAD_LIMIT) {
+    if (!config.features.download_media) {
       ctx.reply('Media download is disabled.').catch(() => {});
       return;
     }
 
+    const doc = ctx.message.document;
+    const fileSize = doc.file_size ?? 0;
     const fileName = doc.file_name || 'file';
     const caption = ctx.message.caption || `[sent a file: ${fileName}]`;
     const fileInfo = `[file: ${fileName}, file_id: ${doc.file_id}, msg_id: ${messageId}]`;
@@ -896,11 +896,12 @@ bot.on('voice', async (ctx) => {
       ctx.reply("Sorry, I'm not available for private messages.").catch(() => {});
       return;
     }
-    const fileSize = ctx.message.voice.file_size ?? 0;
-    if (!VOICE_ENABLED && fileSize <= TELEGRAM_BOT_DOWNLOAD_LIMIT) {
+    if (!VOICE_ENABLED) {
       ctx.reply('Voice messages are not supported on this instance. Please send text.').catch(() => {});
       return;
     }
+
+    const fileSize = ctx.message.voice.file_size ?? 0;
 
     const logEntry = {
       timestamp: new Date().toISOString(),

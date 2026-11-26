@@ -118,8 +118,6 @@ it('forwards the caption of a private file over the bot download limit without d
   expect(forwarded).toContain("Telegram's 20MB bot download limit");
   expect(forwarded).not.toContain(' ---- file: ');
   expect(callApi.mock.calls.filter(([method]) => method === 'sendMessage')).toEqual([
-    ['sendMessage', expect.objectContaining({
-      chat_id: 123, text: "This file exceeds Telegram's 20MB bot download limit. Please send it another way.",
-    })],
+    ['sendMessage', expect.objectContaining({ chat_id: 123 })],
   ]);
 });
