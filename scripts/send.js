@@ -9,7 +9,6 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { execFileSync } from 'child_process';
 import dotenv from 'dotenv';
 import { parseEndpoint } from '../src/lib/utils.js';
 import { DATA_DIR, loadConfig } from '../src/lib/config.js';
@@ -19,6 +18,7 @@ import { redactSecrets } from '../src/lib/redact.js';
 import { markdownToHtml, hasMarkdownContent, stripHtmlTags } from '../src/lib/markdown-html.js';
 import { splitHtmlMessage } from '../src/lib/html-split.js';
 import { withSendRetry } from '../src/lib/send-retry.js';
+import { curlSync } from '../src/lib/curl.js';
 
 // Load .env from ~/zylos/.env (not cwd which may be comm-bridge directory)
 dotenv.config({ path: path.join(process.env.HOME, 'zylos/.env') });
@@ -84,21 +84,20 @@ function apiRequest(method, params) {
     const filePath = params.photo || params.document;
     const fieldName = params.photo ? 'photo' : 'document';
     const args = ['-s', '--max-time', '30', '--write-out', '\n%{http_code}', '-X', 'POST'];
-    if (PROXY_URL) args.push('--proxy', PROXY_URL);
-    args.push(url, '-F', `chat_id=${params.chat_id}`, '-F', `${fieldName}=@${filePath}`);
+    args.push('-F', `chat_id=${params.chat_id}`, '-F', `${fieldName}=@${filePath}`);
     if (params.reply_to_message_id) {
       args.push('-F', `reply_to_message_id=${params.reply_to_message_id}`);
     }
     if (params.message_thread_id) {
       args.push('-F', `message_thread_id=${params.message_thread_id}`);
     }
-    result = execFileSync('curl', args, { encoding: 'utf8', timeout: 35000 });
+    result = curlSync(args, url, { encoding: 'utf8', timeout: 35000, proxy: PROXY_URL });
   } else {
-    const jsonData = JSON.stringify(params);
-    const textArgs = ['-s', '--max-time', '30', '--write-out', '\n%{http_code}', '-X', 'POST', url,
-      '-H', 'Content-Type: application/json', '-d', jsonData];
-    if (PROXY_URL) textArgs.splice(1, 0, '--proxy', PROXY_URL);
-    result = execFileSync('curl', textArgs, { encoding: 'utf8', timeout: 35000 });
+    const textArgs = ['-s', '--max-time', '30', '--write-out', '\n%{http_code}', '-X', 'POST',
+      '-H', 'Content-Type: application/json'];
+    result = curlSync(textArgs, url, {
+      encoding: 'utf8', timeout: 35000, proxy: PROXY_URL, data: JSON.stringify(params),
+    });
   }
   const statusMatch = result.match(/\n(\d{3})$/);
   if (!statusMatch) {

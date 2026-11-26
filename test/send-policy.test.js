@@ -17,11 +17,21 @@ beforeEach(async () => {
   fs.writeFileSync(path.join(bin, 'package.json'), '{"type":"module"}');
   fs.writeFileSync(path.join(bin, 'curl'), `#!/usr/bin/env node
 import fs from 'node:fs';
-fs.appendFileSync(process.env.TG_TEST_CURL_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');
-const jsonIndex = process.argv.indexOf('-d');
-const hasReply = jsonIndex >= 0 && JSON.parse(process.argv[jsonIndex + 1]).reply_to_message_id;
+// send.js passes the URL as a curl config on stdin (-K -) so the bot token stays
+// out of argv. Log the raw argv separately, and argv + URL for the assertions.
+const argv = process.argv.slice(2);
+const config = argv.includes('-K') ? fs.readFileSync(0, 'utf8') : '';
+const url = (config.match(/^url = "(.*)"$/m) || [])[1];
+// The JSON body also comes through the config (data-binary); unquote it like curl does.
+const body = (config.match(/^data-binary = "(.*)"$/m) || [])[1];
+const data = body === undefined ? undefined : body.replace(/\\\\(.)/g, '$1');
+const seen = [...(url ? [url] : []), ...argv, ...(data === undefined ? [] : ['-d', data])];
+fs.appendFileSync(process.env.TG_TEST_CURL_LOG, JSON.stringify(seen) + '\\n');
+fs.appendFileSync(process.env.TG_TEST_CURL_LOG + '.argv', JSON.stringify(argv) + '\\n');
+const jsonIndex = seen.indexOf('-d');
+const hasReply = jsonIndex >= 0 && JSON.parse(seen[jsonIndex + 1]).reply_to_message_id;
 if ((process.env.TG_TEST_REPLY_400 === '1' || (process.env.TG_TEST_REPLY_400 === 'with-reply' && hasReply)) &&
-    process.argv.some(a => /\\/send(Message|Photo|Document)$/.test(a))) {
+    seen.some(a => /\\/send(Message|Photo|Document)$/.test(a))) {
   process.stdout.write('{"ok":false,"error_code":400,"description":"reply message not found"}\\n400');
   process.exit(0);
 }
