@@ -135,15 +135,16 @@ export async function downloadPhoto(ctx) {
 }
 
 /**
- * Download document from message
+ * Download file media from a message
  * @param {Object} ctx - Telegraf context
+ * @param {Object} media - Selected Telegram file media
+ * @param {string} fallbackPrefix - Name to use when Telegram provides no usable filename
  * @returns {Promise<string>} Local file path
  */
-export async function downloadDocument(ctx) {
-  const doc = ctx.message.document;
-  const rawPrefix = doc.file_name ? path.parse(doc.file_name).name : 'document';
-  const prefix = rawPrefix.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 64) || 'document';
-  return downloadFile(ctx, doc.file_id, prefix);
+export async function downloadDocument(ctx, media = ctx.message.document, fallbackPrefix = 'document') {
+  const rawPrefix = media.file_name ? path.parse(media.file_name).name : fallbackPrefix;
+  const prefix = rawPrefix.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 64) || fallbackPrefix;
+  return downloadFile(ctx, media.file_id, prefix);
 }
 
 /**
