@@ -26,7 +26,7 @@ import {
   getGroupName, addGroup
 } from './lib/auth.js';
 import { downloadPhoto, downloadDocument, downloadVoice } from './lib/media.js';
-import { redactUrlCreds } from './lib/redact.js';
+import { redactSecrets, redactUrlCreds } from './lib/redact.js';
 import {
   logAndRecord, ensureReplay,
   formatMessage
@@ -539,6 +539,18 @@ bot.on('text', (ctx) => {
   }
 });
 
+async function downloadMediaForForwarding(ctx, download, type, caption) {
+  try {
+    return { mediaPath: await download(ctx), text: caption };
+  } catch (err) {
+    const reason = redactSecrets(err.message);
+    console.error(`[telegram] Could not download ${type}: ${reason}`);
+    const threadId = ctx.message.message_thread_id;
+    ctx.reply(`Failed to download ${type}.`, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    return { mediaPath: null, text: `${caption}\n[${type} could not be downloaded: ${reason}]` };
+  }
+}
+
 /**
  * Handle photo messages
  */
@@ -578,34 +590,29 @@ bot.on('photo', async (ctx) => {
     };
     logAndRecord(chatId, logEntry, config);
 
-    try {
-      const localPath = await downloadPhoto(ctx);
-      const endpoint = endpointFromCtx(ctx);
-      const correlationId = `${chatId}:${messageId}`;
-      bot.telegram.callApi('setMessageReaction', {
-        chat_id: chatId,
-        message_id: messageId,
-        reaction: [{ type: 'emoji', emoji: '👀' }]
-      }).catch(() => {});
-      startTypingIndicator(chatId, correlationId, threadId);
+    const { mediaPath, text } = await downloadMediaForForwarding(ctx, downloadPhoto, 'photo', caption);
+    const endpoint = endpointFromCtx(ctx);
+    const correlationId = `${chatId}:${messageId}`;
+    bot.telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: [{ type: 'emoji', emoji: '👀' }]
+    }).catch(() => {});
+    startTypingIndicator(chatId, correlationId, threadId);
 
-      const msg = formatMessage({
-        chatType: 'private',
-        userName,
-        text: caption,
-        quotedContent: getReplyToContext(ctx.message),
-        mediaPath: localPath,
-        isThread: !!threadId
-      });
-      sendToC4('telegram', endpoint, msg, (errMsg) => {
-        stopTypingIndicator(correlationId);
-        clearReaction(chatId, messageId);
-        if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
-      });
-    } catch (err) {
-      console.error(`[telegram] Photo download error: ${err.message}`);
-      ctx.reply('Failed to download photo.').catch(() => {});
-    }
+    const msg = formatMessage({
+      chatType: 'private',
+      userName,
+      text,
+      quotedContent: getReplyToContext(ctx.message),
+      mediaPath,
+      isThread: !!threadId
+    });
+    sendToC4('telegram', endpoint, msg, (errMsg) => {
+      stopTypingIndicator(correlationId);
+      clearReaction(chatId, messageId);
+      if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    });
     return;
   }
 
@@ -644,34 +651,30 @@ bot.on('photo', async (ctx) => {
       console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (photo)`);
       return;
     }
-    try {
-      const localPath = await downloadPhoto(ctx);
-      const endpoint = endpointFromCtx(ctx);
-      const correlationId = `${chatId}:${messageId}`;
-      bot.telegram.callApi('setMessageReaction', {
-        chat_id: chatId,
-        message_id: messageId,
-        reaction: [{ type: 'emoji', emoji: '👀' }]
-      }).catch(() => {});
-      startTypingIndicator(chatId, correlationId, threadId);
+    const { mediaPath, text } = await downloadMediaForForwarding(ctx, downloadPhoto, 'photo',
+      caption ? replaceBotMention(ctx) : '[sent a photo]');
+    const endpoint = endpointFromCtx(ctx);
+    const correlationId = `${chatId}:${messageId}`;
+    bot.telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: [{ type: 'emoji', emoji: '👀' }]
+    }).catch(() => {});
+    startTypingIndicator(chatId, correlationId, threadId);
 
-      sendGroupToC4(endpoint, {
-        chatType,
-        groupName: getGroupName(config, chatId, ctx.chat.title),
-        userName,
-        text: caption ? replaceBotMention(ctx) : '[sent a photo]',
-        quotedContent: getReplyToContext(ctx.message),
-        mediaPath: localPath,
-        isThread: !!threadId
-      }, { historyKey: getHistoryKey(chatId, threadId), messageId, config, sequence: logEntry.contextSequence }, (errMsg) => {
-        stopTypingIndicator(correlationId);
-        clearReaction(chatId, messageId);
-        if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
-      });
-    } catch (err) {
-      console.error(`[telegram] Photo download error: ${err.message}`);
-      bot.telegram.sendMessage(chatId, 'Failed to process photo.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
-    }
+    sendGroupToC4(endpoint, {
+      chatType,
+      groupName: getGroupName(config, chatId, ctx.chat.title),
+      userName,
+      text,
+      quotedContent: getReplyToContext(ctx.message),
+      mediaPath,
+      isThread: !!threadId
+    }, { historyKey: getHistoryKey(chatId, threadId), messageId, config, sequence: logEntry.contextSequence }, (errMsg) => {
+      stopTypingIndicator(correlationId);
+      clearReaction(chatId, messageId);
+      if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    });
     return;
   }
 
@@ -744,34 +747,29 @@ bot.on('document', async (ctx) => {
     };
     logAndRecord(chatId, logEntry, config);
 
-    try {
-      const localPath = await downloadDocument(ctx);
-      const endpoint = endpointFromCtx(ctx);
-      const correlationId = `${chatId}:${messageId}`;
-      bot.telegram.callApi('setMessageReaction', {
-        chat_id: chatId,
-        message_id: messageId,
-        reaction: [{ type: 'emoji', emoji: '👀' }]
-      }).catch(() => {});
-      startTypingIndicator(chatId, correlationId, threadId);
+    const { mediaPath, text } = await downloadMediaForForwarding(ctx, downloadDocument, 'file', caption);
+    const endpoint = endpointFromCtx(ctx);
+    const correlationId = `${chatId}:${messageId}`;
+    bot.telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: [{ type: 'emoji', emoji: '👀' }]
+    }).catch(() => {});
+    startTypingIndicator(chatId, correlationId, threadId);
 
-      const msg = formatMessage({
-        chatType: 'private',
-        userName,
-        text: caption,
-        quotedContent: getReplyToContext(ctx.message),
-        mediaPath: localPath,
-        isThread: !!threadId
-      });
-      sendToC4('telegram', endpoint, msg, (errMsg) => {
-        stopTypingIndicator(correlationId);
-        clearReaction(chatId, messageId);
-        if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
-      });
-    } catch (err) {
-      console.error(`[telegram] Document download error: ${err.message}`);
-      ctx.reply('Failed to download file.').catch(() => {});
-    }
+    const msg = formatMessage({
+      chatType: 'private',
+      userName,
+      text,
+      quotedContent: getReplyToContext(ctx.message),
+      mediaPath,
+      isThread: !!threadId
+    });
+    sendToC4('telegram', endpoint, msg, (errMsg) => {
+      stopTypingIndicator(correlationId);
+      clearReaction(chatId, messageId);
+      if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    });
     return;
   }
 
@@ -810,34 +808,30 @@ bot.on('document', async (ctx) => {
       console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (document)`);
       return;
     }
-    try {
-      const localPath = await downloadDocument(ctx);
-      const endpoint = endpointFromCtx(ctx);
-      const correlationId = `${chatId}:${messageId}`;
-      bot.telegram.callApi('setMessageReaction', {
-        chat_id: chatId,
-        message_id: messageId,
-        reaction: [{ type: 'emoji', emoji: '👀' }]
-      }).catch(() => {});
-      startTypingIndicator(chatId, correlationId, threadId);
+    const { mediaPath, text } = await downloadMediaForForwarding(ctx, downloadDocument, 'file',
+      caption ? replaceBotMention(ctx) : `[sent a file: ${fileName}]`);
+    const endpoint = endpointFromCtx(ctx);
+    const correlationId = `${chatId}:${messageId}`;
+    bot.telegram.callApi('setMessageReaction', {
+      chat_id: chatId,
+      message_id: messageId,
+      reaction: [{ type: 'emoji', emoji: '👀' }]
+    }).catch(() => {});
+    startTypingIndicator(chatId, correlationId, threadId);
 
-      sendGroupToC4(endpoint, {
-        chatType,
-        groupName: getGroupName(config, chatId, ctx.chat.title),
-        userName,
-        text: caption ? replaceBotMention(ctx) : `[sent a file: ${fileName}]`,
-        quotedContent: getReplyToContext(ctx.message),
-        mediaPath: localPath,
-        isThread: !!threadId
-      }, { historyKey: getHistoryKey(chatId, threadId), messageId, config, sequence: logEntry.contextSequence }, (errMsg) => {
-        stopTypingIndicator(correlationId);
-        clearReaction(chatId, messageId);
-        if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
-      });
-    } catch (err) {
-      console.error(`[telegram] Document download error: ${err.message}`);
-      bot.telegram.sendMessage(chatId, 'Failed to process document.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
-    }
+    sendGroupToC4(endpoint, {
+      chatType,
+      groupName: getGroupName(config, chatId, ctx.chat.title),
+      userName,
+      text,
+      quotedContent: getReplyToContext(ctx.message),
+      mediaPath,
+      isThread: !!threadId
+    }, { historyKey: getHistoryKey(chatId, threadId), messageId, config, sequence: logEntry.contextSequence }, (errMsg) => {
+      stopTypingIndicator(correlationId);
+      clearReaction(chatId, messageId);
+      if (errMsg) bot.telegram.sendMessage(chatId, errMsg, threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    });
     return;
   }
 
@@ -912,38 +906,33 @@ bot.on('voice', async (ctx) => {
     }).catch(() => {});
     startTypingIndicator(chatId, `${chatId}:${messageId}`, threadId);
 
-    let localPath;
-    try {
-      localPath = await downloadVoice(ctx);
-    } catch (err) {
-      console.error(`[telegram] Voice download error: ${err.message}`);
-      stopTypingIndicator(`${chatId}:${messageId}`);
-      clearReaction(chatId, messageId);
-      ctx.reply('Failed to download voice message.').catch(() => {});
-      return;
-    }
-
-    let transcript;
-    try {
-      transcript = await transcribeAudio(localPath);
-    } catch (err) {
-      console.error(`[telegram] Voice transcription error: ${err.message}`);
-      stopTypingIndicator(`${chatId}:${messageId}`);
-      clearReaction(chatId, messageId);
+    const { mediaPath: localPath, text: fallbackText } = await downloadMediaForForwarding(
+      ctx, downloadVoice, 'voice message', ctx.message.caption || '[voice message]');
+    let text = fallbackText;
+    if (localPath) {
+      let transcript;
+      try {
+        transcript = await transcribeAudio(localPath);
+      } catch (err) {
+        console.error(`[telegram] Voice transcription error: ${err.message}`);
+        stopTypingIndicator(`${chatId}:${messageId}`);
+        clearReaction(chatId, messageId);
+        fs.unlink(localPath, () => {});
+        ctx.reply('Voice transcription failed, please send text instead.').catch(() => {});
+        return;
+      }
       fs.unlink(localPath, () => {});
-      ctx.reply('Voice transcription failed, please send text instead.').catch(() => {});
-      return;
+      text = '[Voice] ' + transcript;
+      console.log(`[telegram] Voice transcribed: "${transcript.substring(0, 60)}"`);
     }
-    fs.unlink(localPath, () => {});
     stopTypingIndicator(`${chatId}:${messageId}`);
     clearReaction(chatId, messageId);
-    console.log(`[telegram] Voice transcribed: "${transcript.substring(0, 60)}"`);
 
     const endpoint = endpointFromCtx(ctx);
     const msg = formatMessage({
       chatType: 'private',
       userName,
-      text: `[Voice] ${transcript}`,
+      text,
       quotedContent: getReplyToContext(ctx.message),
       mediaPath: null,
       isThread: !!threadId
@@ -994,31 +983,27 @@ bot.on('voice', async (ctx) => {
   }).catch(() => {});
   startTypingIndicator(chatId, `${chatId}:${messageId}`, threadId);
 
-  let localPath;
-  try {
-    localPath = await downloadVoice(ctx);
-  } catch (err) {
-    console.error(`[telegram] Group voice download error: ${err.message}`);
-    stopTypingIndicator(`${chatId}:${messageId}`);
-    clearReaction(chatId, messageId);
-    return;
-  }
-
-  let transcript;
-  try {
-    transcript = await transcribeAudio(localPath);
-  } catch (err) {
-    console.error(`[telegram] Group voice transcription error: ${err.message}`);
-    stopTypingIndicator(`${chatId}:${messageId}`);
-    clearReaction(chatId, messageId);
+  const { mediaPath: localPath, text: fallbackText } = await downloadMediaForForwarding(
+    ctx, downloadVoice, 'voice message', ctx.message.caption ? replaceBotMention(ctx) : '[voice message]');
+  let text = fallbackText;
+  if (localPath) {
+    let transcript;
+    try {
+      transcript = await transcribeAudio(localPath);
+    } catch (err) {
+      console.error(`[telegram] Group voice transcription error: ${err.message}`);
+      stopTypingIndicator(`${chatId}:${messageId}`);
+      clearReaction(chatId, messageId);
+      fs.unlink(localPath, () => {});
+      bot.telegram.sendMessage(chatId, 'Voice transcription failed, please send text instead.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+      return;
+    }
     fs.unlink(localPath, () => {});
-    bot.telegram.sendMessage(chatId, 'Voice transcription failed, please send text instead.', threadId ? { message_thread_id: threadId } : {}).catch(() => {});
-    return;
+    text = '[Voice] ' + transcript;
+    console.log(`[telegram] Group voice transcribed: "${transcript.substring(0, 60)}"`);
   }
-  fs.unlink(localPath, () => {});
   stopTypingIndicator(`${chatId}:${messageId}`);
   clearReaction(chatId, messageId);
-  console.log(`[telegram] Group voice transcribed: "${transcript.substring(0, 60)}"`);
 
   const endpoint = endpointFromCtx(ctx);
   const correlationId = `${chatId}:${messageId}`;
@@ -1026,7 +1011,7 @@ bot.on('voice', async (ctx) => {
     chatType,
     groupName: getGroupName(config, chatId, ctx.chat.title),
     userName,
-    text: `[Voice] ${transcript}`,
+    text,
     quotedContent: getReplyToContext(ctx.message),
     mediaPath: null,
     isThread: !!threadId,

@@ -75,7 +75,19 @@ export async function downloadFile(ctx, fileId, prefix = 'file') {
   const proxyUrl = getEnv('TELEGRAM_PROXY_URL');
 
   // Get file info from Telegram (retried — proxy TLS handshakes drop transiently)
-  const file = await withRetry(() => ctx.telegram.getFile(fileId), 'getFile');
+  const file = await withRetry(async () => {
+    let timer;
+    try {
+      return await Promise.race([
+        ctx.telegram.getFile(fileId),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('getFile timed out after 15 seconds')), 15000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }, 'getFile');
   const filePath = file.file_path;
   const ext = path.extname(filePath) || '.bin';
 
