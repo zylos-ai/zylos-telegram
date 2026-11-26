@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-11-27
+
+### Fixed
+- Videos, round video messages, audio files and GIFs were silently dropped (no log entry, nothing forwarded, no feedback to the sender). They now go through the same flow as files: access checks, the media-download switch, the 20 MB limit, the download-failure fallback, and the same group handling (download when mentioned, otherwise recorded with their file_id for later download). GIFs, which Telegram sends with both an animation and a document field, are handled once as animations (#102).
+- Stickers were silently dropped as well; they are now passed on as one line of text, such as `[sent a sticker 😂]`, through the same rules as text messages. Stickers are not downloaded (#102).
+
 ## [0.8.1] - 2026-11-27
 
 ### Fixed
