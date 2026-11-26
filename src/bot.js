@@ -407,7 +407,6 @@ bot.start((ctx) => {
  * Handle text messages
  */
 bot.on('text', (ctx) => {
-  if (ctx.message.text.startsWith('/')) return;
   config = loadConfig();
 
   const chatId = ctx.chat.id;
