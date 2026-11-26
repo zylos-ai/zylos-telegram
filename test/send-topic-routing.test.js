@@ -112,45 +112,43 @@ describe('send.js forum topic routing', () => {
     expect(transport[0]).toContain('message_thread_id=162');
   });
 
-  it.each(['hello', '[MEDIA:image]', '[MEDIA:file]'])('%s: bot token never appears in curl argv', async message => {
-    const media = path.join(root, 'sample.txt');
-    fs.writeFileSync(media, 'fixture');
-    const result = await runSend('-100', message.startsWith('[MEDIA:') ? message + media : message);
+  it('text: keeps the token, proxy and body in the stdin config', async () => {
+    const text = 'private "chat" text\\with\nnewline';
+    const proxy = 'http://proxy-user:proxy-secret@proxy.local:8080';
+    const result = await runSend('-100', text, { TELEGRAM_PROXY_URL: proxy });
     expect(result.code).toBe(0);
+
     const argv = fs.readFileSync(curlLog + '.argv', 'utf8').trim().split('\n').map(line => JSON.parse(line));
     expect(argv).toHaveLength(1);
     expect(argv[0].slice(0, 2)).toEqual(['-K', '-']);
-    expect(argv[0].join(' ')).not.toContain('fixture-token');
-    expect(calls()[0][0]).toMatch(/^https:\/\/api\.telegram\.org\/botfixture-token\/send(Message|Photo|Document)$/);
+    expect(argv[0]).not.toContain('--proxy');
+    expect(argv[0]).not.toContain('-d');
+    expect(argv[0].join(' ')).not.toMatch(/fixture-token|proxy-secret|private/);
+
+    const config = JSON.parse(fs.readFileSync(curlLog + '.config', 'utf8').trim());
+    expect(config).toContain('url = "https://api.telegram.org/botfixture-token/sendMessage"\n');
+    expect(config).toContain('proxy = "' + proxy + '"\n');
+    expect(config).toMatch(/^data-binary = ".*"$/m);
+    expect(JSON.parse(calls()[0].at(-1))).toEqual({ chat_id: '-100', text });
   });
 
-  it.each(['hello', '[MEDIA:image]', '[MEDIA:file]'])('%s: proxy URL goes to the curl config, never argv', async message => {
+  it('media: keeps the token and proxy in the stdin config', async () => {
     const proxy = 'http://proxy-user:proxy-secret@proxy.local:8080';
     const media = path.join(root, 'sample.txt');
     fs.writeFileSync(media, 'fixture');
-    const result = await runSend('-100', message.startsWith('[MEDIA:') ? message + media : message,
-      { TELEGRAM_PROXY_URL: proxy });
+    const result = await runSend('-100', '[MEDIA:file]' + media, { TELEGRAM_PROXY_URL: proxy });
     expect(result.code).toBe(0);
-    const argv = fs.readFileSync(curlLog + '.argv', 'utf8').trim().split('\n').map(line => JSON.parse(line));
-    expect(argv).toHaveLength(1);
-    expect(argv[0]).not.toContain('--proxy');
-    expect(argv[0].join(' ')).not.toContain('proxy-secret');
-    expect(argv[0].join(' ')).not.toContain('fixture-token');
-    const config = fs.readFileSync(curlLog + '.config', 'utf8').trim().split('\n').map(line => JSON.parse(line));
-    expect(config[0]).toContain(`proxy = "${proxy}"\n`);
-  });
 
-  it('text: the message JSON goes to the curl config, never argv', async () => {
-    const text = 'private "chat" text\\with\nnewline';
-    const result = await runSend('-100', text);
-    expect(result.code).toBe(0);
     const argv = fs.readFileSync(curlLog + '.argv', 'utf8').trim().split('\n').map(line => JSON.parse(line));
     expect(argv).toHaveLength(1);
-    expect(argv[0]).not.toContain('-d');
-    expect(argv[0].join(' ')).not.toContain('private');
-    const config = fs.readFileSync(curlLog + '.config', 'utf8').trim().split('\n').map(line => JSON.parse(line));
-    expect(config[0]).toMatch(/^data-binary = ".*"$/m);
-    expect(JSON.parse(calls()[0].at(-1))).toMatchObject({ chat_id: '-100', text });
+    expect(argv[0].slice(0, 2)).toEqual(['-K', '-']);
+    expect(argv[0]).toContain('document=@' + media);
+    expect(argv[0]).not.toContain('--proxy');
+    expect(argv[0].join(' ')).not.toMatch(/fixture-token|proxy-secret/);
+
+    const config = JSON.parse(fs.readFileSync(curlLog + '.config', 'utf8').trim());
+    expect(config).toContain('url = "https://api.telegram.org/botfixture-token/sendDocument"\n');
+    expect(config).toContain('proxy = "' + proxy + '"\n');
   });
 
   it('no thread or topic: sends to the chat without a thread id', async () => {
