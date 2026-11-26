@@ -7,11 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-27
+
+### Fixed
+- Private messages whose text starts with `/` but is not a bot command were dropped; they are now forwarded like any other text (#98).
+- When Telegram stalls on `getFile`, a photo, file or voice download no longer hangs the message: each `getFile` attempt times out after 15 seconds, and if the download still fails the caption (or a placeholder) is forwarded with a short note that the media could not be downloaded (#91, #99).
+- Media downloads no longer have a fixed total time limit (previously 30 s for incoming media, 60 s for `download.js`, 120 s for `download-media.js`). A download is given up only when it stays below 1 KB/s for 30 seconds, with a 15-second connect timeout; retries are unchanged (#100).
+- Private photos, files and voice messages over Telegram's 20 MB bot download limit are no longer attempted: the sender is told the file is too large to receive, and the caption is forwarded with a note giving the file size and the limit. The media-download and voice switches still apply first (#100).
+
 ### Security
 
-- Keep the bot token out of curl argv: `send.js` (text and media), `download.js`, `download-media.js` and media downloads pass the Telegram URL to curl as a config on stdin (`-K -`), so it no longer shows up in `ps` or `/proc/<pid>/cmdline`.
-- Keep `TELEGRAM_PROXY_URL` (which may carry `user:password@`) out of curl argv as well: the proxy now goes into the same stdin config (`proxy = "..."`) instead of `--proxy`.
-- Keep outgoing text out of curl argv too: `send.js` passes the message JSON as `data-binary` in the same stdin config instead of `-d`, so chat content no longer shows up in `ps`.
+- Keep the bot token out of curl argv: `send.js` (text and media), `download.js`, `download-media.js` and media downloads pass the Telegram URL to curl as a config on stdin (`-K -`), so it no longer shows up in `ps` or `/proc/<pid>/cmdline` (#97).
+- Keep `TELEGRAM_PROXY_URL` (which may carry `user:password@`) out of curl argv as well: the proxy now goes into the same stdin config (`proxy = "..."`) instead of `--proxy` (#97).
+- Keep outgoing text out of curl argv too: `send.js` passes the message JSON as `data-binary` in the same stdin config instead of `-d`, so chat content no longer shows up in `ps` (#97).
 
 ## [0.8.0] - 2026-11-18
 
