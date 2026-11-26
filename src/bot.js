@@ -404,9 +404,9 @@ bot.start((ctx) => {
 });
 
 /**
- * Handle text messages
+ * Handle text and sticker descriptions
  */
-bot.on('text', (ctx) => {
+function handleText(ctx, text) {
   config = loadConfig();
 
   const chatId = ctx.chat.id;
@@ -421,7 +421,7 @@ bot.on('text', (ctx) => {
     user_id: ctx.from.id,
     username: ctx.from.username || null,
     user_name: userName,
-    text: ctx.message.text,
+    text,
     thread_id: threadId
   };
 
@@ -447,7 +447,7 @@ bot.on('text', (ctx) => {
     const msg = formatMessage({
       chatType: 'private',
       userName,
-      text: ctx.message.text,
+      text,
       quotedContent,
       mediaPath: null
     });
@@ -510,7 +510,7 @@ bot.on('text', (ctx) => {
     const quotedContent = getReplyToContext(ctx.message);
     const groupName = getGroupName(config, chatId, ctx.chat.title);
 
-    const cleanText = mentioned ? replaceBotMention(ctx) : ctx.message.text;
+    const cleanText = mentioned ? replaceBotMention(ctx) : text;
 
     const endpoint = endpointFromCtx(ctx);
     const correlationId = `${chatId}:${messageId}`;
@@ -526,7 +526,7 @@ bot.on('text', (ctx) => {
       chatType,
       groupName,
       userName,
-      text: cleanText || ctx.message.text,
+      text: cleanText || text,
       quotedContent,
       mediaPath: null,
       isThread: !!threadId,
@@ -537,6 +537,12 @@ bot.on('text', (ctx) => {
       if (errMsg) bot.telegram.sendMessage(chatId, errMsg, sendReplyOpts).catch(() => {});
     });
   }
+}
+
+bot.on('text', (ctx) => handleText(ctx, ctx.message.text));
+bot.on('sticker', (ctx) => {
+  const { emoji } = ctx.message.sticker;
+  handleText(ctx, emoji ? '[sent a sticker ' + emoji + ']' : '[sent a sticker]');
 });
 
 const TELEGRAM_BOT_DOWNLOAD_LIMIT = 20 * 1024 * 1024;
@@ -720,10 +726,15 @@ bot.on('photo', async (ctx) => {
   console.log(`[telegram] Photo logged for lazy download in group ${chatId}`);
 });
 
-/**
- * Handle document messages
- */
-bot.on('document', async (ctx) => {
+const FILE_MEDIA_LABELS = {
+  animation: 'animation',
+  video: 'video',
+  video_note: 'video message',
+  audio: 'audio file',
+  document: 'file',
+};
+
+async function handleFileMedia(ctx) {
   const config = loadConfig();
 
   const chatType = ctx.chat.type;
@@ -731,6 +742,17 @@ bot.on('document', async (ctx) => {
   const messageId = ctx.message.message_id;
   const threadId = ctx.message.message_thread_id || null;
   const userName = resolveUserName(ctx.from);
+
+  // Telegram also sets document on animations. Prefer the actual media type.
+  const kind = Object.keys(FILE_MEDIA_LABELS).find((key) => ctx.message[key]);
+  const media = ctx.message[kind];
+  const label = FILE_MEDIA_LABELS[kind];
+  const fileName = media.file_name || label;
+  const article = kind === 'animation' || kind === 'audio' ? 'an' : 'a';
+  const nameSuffix = media.file_name || kind === 'document' ? ': ' + fileName : '';
+  const placeholder = `[sent ${article} ${label}${nameSuffix}]`;
+  const fileInfo = `[${label}: ${fileName}, file_id: ${media.file_id}, msg_id: ${messageId}]`;
+  const download = () => downloadDocument(ctx, media, kind);
 
   // For private chat: must be authorized, download immediately
   if (chatType === 'private') {
@@ -744,11 +766,7 @@ bot.on('document', async (ctx) => {
       return;
     }
 
-    const doc = ctx.message.document;
-    const fileSize = doc.file_size ?? 0;
-    const fileName = doc.file_name || 'file';
-    const caption = ctx.message.caption || `[sent a file: ${fileName}]`;
-    const fileInfo = `[file: ${fileName}, file_id: ${doc.file_id}, msg_id: ${messageId}]`;
+    const caption = ctx.message.caption || placeholder;
     const logEntry = {
       timestamp: new Date().toISOString(),
       message_id: messageId,
@@ -760,7 +778,7 @@ bot.on('document', async (ctx) => {
     };
     logAndRecord(chatId, logEntry, config);
 
-    const { mediaPath, text } = await downloadMediaForForwarding(ctx, downloadDocument, 'file', caption, fileSize);
+    const { mediaPath, text } = await downloadMediaForForwarding(ctx, download, label, caption, media.file_size);
     const endpoint = endpointFromCtx(ctx);
     const correlationId = `${chatId}:${messageId}`;
     bot.telegram.callApi('setMessageReaction', {
@@ -794,11 +812,7 @@ bot.on('document', async (ctx) => {
   // Replay log history before recording new entry to preserve chronological order
   ensureReplay(getHistoryKey(chatId, threadId), config);
 
-  // Build log text with file metadata for context
-  const doc = ctx.message.document;
-  const fileName = doc.file_name || 'file';
   const caption = ctx.message.caption || '';
-  const fileInfo = `[file: ${fileName}, file_id: ${doc.file_id}, msg_id: ${messageId}]`;
   const logText = caption ? `${caption}\n${fileInfo}` : fileInfo;
   const logEntry = {
     timestamp: new Date().toISOString(),
@@ -818,11 +832,11 @@ bot.on('document', async (ctx) => {
       return;
     }
     if (!isOwner(config, ctx) && !isSenderAllowed(config, chatId, ctx.from.id)) {
-      console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (document)`);
+      console.log(`[telegram] Sender ${ctx.from.id} not in allowFrom for group ${chatId} (${label})`);
       return;
     }
-    const { mediaPath, text } = await downloadMediaForForwarding(ctx, downloadDocument, 'file',
-      caption ? replaceBotMention(ctx) : `[sent a file: ${fileName}]`);
+    const { mediaPath, text } = await downloadMediaForForwarding(ctx, download, label,
+      caption ? replaceBotMention(ctx) : placeholder);
     const endpoint = endpointFromCtx(ctx);
     const correlationId = `${chatId}:${messageId}`;
     bot.telegram.callApi('setMessageReaction', {
@@ -861,7 +875,7 @@ bot.on('document', async (ctx) => {
       chatType,
       groupName: getGroupName(config, chatId, ctx.chat.title),
       userName,
-      text: caption ? `${caption}\n${fileInfo}` : `[sent a file: ${fileName}]\n${fileInfo}`,
+      text: caption ? `${caption}\n${fileInfo}` : `${placeholder}\n${fileInfo}`,
       quotedContent: getReplyToContext(ctx.message),
       mediaPath: null,
       isThread: !!threadId,
@@ -875,8 +889,12 @@ bot.on('document', async (ctx) => {
   }
 
   // Not @mentioned in non-smart group: logged with metadata only
-  console.log(`[telegram] Document logged for lazy download in group ${chatId}`);
-});
+  console.log(`[telegram] File media logged for lazy download in group ${chatId}`);
+}
+
+// A matched handler consumes the update, including animations with both fields.
+bot.on('document', handleFileMedia);
+bot.on(['video', 'video_note', 'audio', 'animation'], handleFileMedia);
 
 /**
  * Handle voice messages — download and transcribe via local Whisper (Option A: transparent ASR)

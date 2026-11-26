@@ -121,3 +121,39 @@ it('forwards the caption of a private file over the bot download limit without d
     ['sendMessage', expect.objectContaining({ chat_id: 123 })],
   ]);
 });
+
+it('downloads a private video and forwards its attachment through C4', async () => {
+  getFile.mockResolvedValue({ file_path: 'videos/fixture.mp4' });
+  fixture.execFile.mockImplementation((_command, args, _options, callback) => {
+    fs.writeFileSync(args[args.indexOf('-o') + 1], 'fixture video');
+    callback(null);
+    return { stdin: { end() {} } };
+  });
+
+  await bot.handleUpdate({
+    update_id: 3,
+    message: {
+      message_id: 3,
+      date: 1,
+      from: { id: 123, is_bot: false, first_name: 'Owner', username: 'owner' },
+      chat: { id: 123, type: 'private', first_name: 'Owner' },
+      video: {
+        file_id: 'video-file', file_unique_id: 'video-unique', file_size: 5 * 1024 * 1024,
+        width: 320, height: 240, duration: 2,
+      },
+    },
+  });
+
+  expect(getFile).toHaveBeenCalledExactlyOnceWith('video-file');
+  expect(fixture.execFile).toHaveBeenCalledOnce();
+  const [command, argv] = fixture.execFile.mock.calls[0];
+  expect(command).toBe('curl');
+  const localPath = argv[argv.indexOf('-o') + 1];
+  expect(path.basename(localPath)).toMatch(/^video-.*\.mp4$/);
+  expect(fixture.sendToC4).toHaveBeenCalledExactlyOnceWith(
+    'telegram', '123|msg:3|req:123:3', expect.any(String), expect.any(Function)
+  );
+  const [, , forwarded] = fixture.sendToC4.mock.calls[0];
+  expect(forwarded).toContain('[sent a video]');
+  expect(forwarded).toContain(' ---- file: ' + localPath);
+});
