@@ -65,10 +65,11 @@ async function getFilePath(fileId) {
 // Step 2: Download the file
 async function downloadFile(filePath, localPath) {
   const url = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-  const curlArgs = ['-s', '--fail', '--max-time', '60', '-o', localPath];
+  const curlArgs = ['-s', '--fail', '--speed-limit', '1024', '--speed-time', '30',
+    '--connect-timeout', '15', '-o', localPath];
 
   return new Promise((resolve, reject) => {
-    curlAsync(curlArgs, url, { timeout: 65000, proxy: PROXY_URL }, (error) => {
+    curlAsync(curlArgs, url, { proxy: PROXY_URL }, (error) => {
       if (error) return reject(new Error(`Download failed: ${error.message}`));
       resolve(localPath);
     });

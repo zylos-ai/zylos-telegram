@@ -539,7 +539,19 @@ bot.on('text', (ctx) => {
   }
 });
 
-async function downloadMediaForForwarding(ctx, download, type, caption) {
+const TELEGRAM_BOT_DOWNLOAD_LIMIT = 20 * 1024 * 1024;
+
+async function downloadMediaForForwarding(ctx, download, type, caption, fileSize) {
+  if (fileSize > TELEGRAM_BOT_DOWNLOAD_LIMIT) {
+    const threadId = ctx.message.message_thread_id;
+    ctx.reply("This file exceeds Telegram's 20MB bot download limit. Please send it another way.",
+      threadId ? { message_thread_id: threadId } : {}).catch(() => {});
+    return {
+      mediaPath: null,
+      text: `${caption}\n[${type} could not be downloaded: ${fileSize} bytes exceeds Telegram's 20MB bot download limit.]`
+    };
+  }
+
   try {
     return { mediaPath: await download(ctx), text: caption };
   } catch (err) {
@@ -576,7 +588,7 @@ bot.on('photo', async (ctx) => {
     }
 
     const photos = ctx.message.photo;
-    const fileId = photos[photos.length - 1].file_id;
+    const { file_id: fileId, file_size: fileSize = 0 } = photos[photos.length - 1];
     const caption = ctx.message.caption || '[sent a photo]';
     const photoInfo = `[photo, file_id: ${fileId}, msg_id: ${messageId}]`;
     const logEntry = {
@@ -590,7 +602,7 @@ bot.on('photo', async (ctx) => {
     };
     logAndRecord(chatId, logEntry, config);
 
-    const { mediaPath, text } = await downloadMediaForForwarding(ctx, downloadPhoto, 'photo', caption);
+    const { mediaPath, text } = await downloadMediaForForwarding(ctx, downloadPhoto, 'photo', caption, fileSize);
     const endpoint = endpointFromCtx(ctx);
     const correlationId = `${chatId}:${messageId}`;
     bot.telegram.callApi('setMessageReaction', {
@@ -733,6 +745,7 @@ bot.on('document', async (ctx) => {
     }
 
     const doc = ctx.message.document;
+    const fileSize = doc.file_size ?? 0;
     const fileName = doc.file_name || 'file';
     const caption = ctx.message.caption || `[sent a file: ${fileName}]`;
     const fileInfo = `[file: ${fileName}, file_id: ${doc.file_id}, msg_id: ${messageId}]`;
@@ -747,7 +760,7 @@ bot.on('document', async (ctx) => {
     };
     logAndRecord(chatId, logEntry, config);
 
-    const { mediaPath, text } = await downloadMediaForForwarding(ctx, downloadDocument, 'file', caption);
+    const { mediaPath, text } = await downloadMediaForForwarding(ctx, downloadDocument, 'file', caption, fileSize);
     const endpoint = endpointFromCtx(ctx);
     const correlationId = `${chatId}:${messageId}`;
     bot.telegram.callApi('setMessageReaction', {
@@ -888,6 +901,8 @@ bot.on('voice', async (ctx) => {
       return;
     }
 
+    const fileSize = ctx.message.voice.file_size ?? 0;
+
     const logEntry = {
       timestamp: new Date().toISOString(),
       message_id: messageId,
@@ -907,7 +922,7 @@ bot.on('voice', async (ctx) => {
     startTypingIndicator(chatId, `${chatId}:${messageId}`, threadId);
 
     const { mediaPath: localPath, text: fallbackText } = await downloadMediaForForwarding(
-      ctx, downloadVoice, 'voice message', ctx.message.caption || '[voice message]');
+      ctx, downloadVoice, 'voice message', ctx.message.caption || '[voice message]', fileSize);
     let text = fallbackText;
     if (localPath) {
       let transcript;

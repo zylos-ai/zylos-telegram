@@ -98,11 +98,12 @@ export async function downloadFile(ctx, fileId, prefix = 'file') {
   // Download URL
   const fileUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
 
-  // Download using curl (supports proxy), with timeout — retried on transient failures
+  // Download using curl (supports proxy), with a low-speed limit — retried on transient failures
   await withRetry(() => new Promise((resolve, reject) => {
-    const args = ['-s', '--fail', '--max-time', '30', '-o', localPath];
+    const args = ['-s', '--fail', '--speed-limit', '1024', '--speed-time', '30',
+      '--connect-timeout', '15', '-o', localPath];
 
-    curlAsync(args, fileUrl, { timeout: 35000, proxy: proxyUrl }, (error) => {
+    curlAsync(args, fileUrl, { proxy: proxyUrl }, (error) => {
       if (error) {
         // error.message includes the full curl command line — and the URL in it
         // carries the bot token. Never surface it; report only the safe exit
