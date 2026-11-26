@@ -53,9 +53,10 @@ try {
 
   // Step 2: Download the file
   const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-  const dlArgs = ['-s', '--fail', '--max-time', '120', '-o', localPath];
+  const dlArgs = ['-s', '--fail', '--speed-limit', '1024', '--speed-time', '30',
+    '--connect-timeout', '15', '-o', localPath];
 
-  curlSync(dlArgs, fileUrl, { timeout: 125000, proxy: PROXY_URL });
+  curlSync(dlArgs, fileUrl, { proxy: PROXY_URL });
 
   const stats = fs.statSync(localPath);
   console.log(localPath);
